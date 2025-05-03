@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test Pot Size Estimation</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+  </head>
+  <body>
+    <div class="container">
+      <h1>
+        <a href="/" style="text-decoration: none; color: inherit">🌱</a> Test
+        Pot Size Estimation
+      </h1>
+      <p>Upload an image of a plant pot to estimate its size using OpenCV.</p>
+      <p class="warning">
+        <strong>Note:</strong> This estimation is highly approximate and
+        experimental. Results depend heavily on image quality, angle, and
+        lighting.
+      </p>
+
+      <form id="potSizeForm">
+        <div class="form-group">
+          <label for="imageInput">Upload Pot Photo:</label>
+          <input
+            type="file"
+            id="imageInput"
+            name="image"
+            accept="image/*"
+            required
+            class="form-control-file"
+          />
+        </div>
+        <div class="image-preview" id="imagePreview"></div>
+        <button type="submit" class="btn btn-primary">Estimate Pot Size</button>
+      </form>
+
+      <div class="loading" id="loading">
+        <p>Estimating... 📏</p>
+      </div>
+
+      <div class="error" id="error"></div>
+
+      <div class="results" id="results">
+        <h2>Estimation Result:</h2>
+        <pre><code id="resultData" style="white-space: pre-wrap; word-wrap: break-word;"></code></pre>
+      </div>
+      <div class="back-link">
+        <a href="/">← Back to Main Calculator</a>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById("potSizeForm");
+      const imageInput = document.getElementById("imageInput");
+      const imagePreview = document.getElementById("imagePreview");
+      const loadingDiv = document.getElementById("loading");
+      const errorDiv = document.getElementById("error");
+      const resultsDiv = document.getElementById("results");
+      const resultData = document.getElementById("resultData");
+
+      imageInput.addEventListener("change", function (e) {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            imagePreview.innerHTML = `<img src="${e.target.result}" alt="Image preview" style="max-width: 100%; max-height: 300px; margin-top: 10px; border-radius: 5px;"/>`;
+          };
+          reader.readAsDataURL(file);
+          clearFeedback();
+        } else {
+          imagePreview.innerHTML = "";
+        }
+      });
+
+      form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        clearFeedback();
+
+        const file = imageInput.files[0];
+        if (!file) {
+          showError("Please select an image file.");
+          return;
+        }
+
+        loadingDiv.style.display = "block";
+
+        const formData = new FormData();
+        formData.append("image", file);
+
+        try {
+          // Use the dedicated test endpoint
+          const response = await fetch("/test/estimate-pot-size", {
+            method: "POST",
+            body: formData,
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(
+              data.error || `HTTP error! status: ${response.status}`
+            );
+          }
+
+          // Display the raw JSON result
+          resultData.textContent = JSON.stringify(data, null, 2);
+          resultsDiv.style.display = "block";
+        } catch (error) {
+          console.error("Estimation Error:", error);
+          showError(`Estimation failed: ${error.message}`);
+        } finally {
+          loadingDiv.style.display = "none";
+        }
+      });
+
+      function clearFeedback() {
+        errorDiv.style.display = "none";
+        errorDiv.textContent = "";
+        resultsDiv.style.display = "none";
+        resultData.textContent = "";
+      }
+
+      function showError(message) {
+        errorDiv.textContent = message;
+        errorDiv.style.display = "block";
+        resultsDiv.style.display = "none";
+      }
+    </script>
+  </body>
+</html>

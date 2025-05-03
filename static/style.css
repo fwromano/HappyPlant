@@ -1,0 +1,449 @@
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  max-width: 800px;
+  margin: 20px auto; /* Added top/bottom margin */
+  padding: 20px;
+  background-color: #f8f9fa; /* Lighter gray */
+  color: #333;
+  line-height: 1.6;
+}
+
+.container {
+  background-color: white;
+  padding: 30px 40px; /* More padding */
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e9ecef;
+}
+
+h1 {
+  color: #2c3e50; /* Dark blue-gray */
+  text-align: center;
+  margin-bottom: 15px; /* Reduced margin */
+  font-weight: 600;
+}
+h1 a {
+  text-decoration: none;
+  color: inherit;
+}
+h1 a:hover {
+  opacity: 0.8;
+}
+
+h2 {
+  color: #343a40;
+  margin-top: 30px;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #dee2e6;
+  padding-bottom: 5px;
+  font-weight: 500;
+}
+
+p {
+  margin-bottom: 15px;
+}
+p.warning {
+  background-color: #fff3cd;
+  border-left: 4px solid #ffeeba;
+  padding: 10px 15px;
+  border-radius: 4px;
+  color: #856404;
+}
+
+/* --- Tabs --- */
+.tabs {
+  display: flex;
+  margin-bottom: 25px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.tab {
+  padding: 10px 20px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-size: 16px;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px; /* Overlap border */
+  color: #6c757d;
+  transition: all 0.2s ease-in-out;
+}
+
+.tab.active {
+  border-bottom: 3px solid #007bff; /* Bootstrap primary blue */
+  color: #007bff;
+  font-weight: 500;
+}
+.tab:hover {
+  color: #495057;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+  animation: fadeIn 0.5s; /* Add fade-in */
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* --- Forms --- */
+form {
+  margin-top: 20px;
+}
+fieldset {
+  border: 1px solid #ced4da;
+  padding: 20px;
+  margin-bottom: 25px;
+  border-radius: 5px;
+}
+legend {
+  width: auto; /* Fit content */
+  padding: 0 10px;
+  font-size: 1.1em;
+  font-weight: 500;
+  color: #495057;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px; /* Increased space */
+  font-weight: 500; /* Slightly bolder labels */
+  color: #495057;
+}
+
+/* Style for text inputs, number inputs, file inputs */
+.form-control,
+.form-control-file {
+  display: block; /* Ensure file input behaves like block */
+  width: 100%;
+  padding: 10px 12px; /* Comfortable padding */
+  font-size: 1rem;
+  line-height: 1.5;
+  color: #495057;
+  background-color: #fff;
+  background-clip: padding-box;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  box-sizing: border-box; /* Include padding and border in width */
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+.form-control:focus {
+  border-color: #80bdff;
+  outline: 0;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+.form-control::placeholder {
+  color: #6c757d;
+  opacity: 1;
+}
+
+/* Specific style for file input button text if needed */
+.form-control-file::file-selector-button {
+  padding: 10px 12px;
+  margin: -10px -12px; /* Adjust to align */
+  margin-right: 12px;
+  color: #495057;
+  background-color: #e9ecef;
+  border: none;
+  border-right: 1px solid #ced4da;
+  border-radius: 4px 0 0 4px;
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out;
+}
+.form-control-file:hover::file-selector-button {
+  background-color: #dde1e5;
+}
+
+/* --- Buttons --- */
+.btn,
+  .upload-btn, /* Keep existing class names for compatibility */
+  .calculate-btn {
+  display: inline-block;
+  font-weight: 400;
+  color: #fff;
+  text-align: center;
+  vertical-align: middle;
+  cursor: pointer;
+  user-select: none;
+  background-color: #007bff; /* Bootstrap primary blue */
+  border: 1px solid #007bff;
+  padding: 10px 20px; /* Standard padding */
+  font-size: 1rem;
+  line-height: 1.5;
+  border-radius: 5px;
+  transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out,
+    border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  text-decoration: none; /* For potential <a> tags styled as buttons */
+}
+.btn:hover,
+.upload-btn:hover,
+.calculate-btn:hover {
+  color: #fff;
+  background-color: #0056b3; /* Darker blue */
+  border-color: #004085;
+}
+.btn:focus,
+.btn:active {
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.5);
+}
+.btn:disabled {
+  background-color: #6c757d;
+  border-color: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+/* --- Results & Feedback --- */
+.results,
+.result-section {
+  margin-top: 30px;
+  display: none; /* Hide by default */
+  padding: 20px;
+  background-color: #e9f7ef; /* Light green background */
+  border-radius: 5px;
+  border: 1px solid #d1e7dd;
+  color: #0f5132; /* Dark green text */
+}
+.results h2 {
+  margin-top: 0;
+  color: #0a3622; /* Even darker green for heading */
+  border-bottom: 1px solid #a3cfbb;
+}
+
+.result-section {
+  /* For main page sections */
+  background-color: #f8f9fa; /* Light gray */
+  border: 1px solid #dee2e6;
+  color: #333;
+  margin-bottom: 20px;
+}
+.result-section h2 {
+  color: #343a40;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.loading {
+  text-align: center;
+  display: none;
+  margin: 30px 0;
+  color: #6c757d;
+  font-size: 1.1em;
+}
+.loading p {
+  margin: 0;
+}
+
+.error {
+  color: #721c24; /* Dark red */
+  background-color: #f8d7da; /* Light pink */
+  border: 1px solid #f5c6cb;
+  padding: 15px;
+  border-radius: 5px;
+  text-align: center;
+  margin: 20px 0;
+  display: none; /* Hide by default */
+}
+.error strong {
+  color: #58151a;
+}
+
+.image-preview {
+  max-width: 100%;
+  margin: 20px auto; /* Center preview */
+  text-align: center;
+}
+
+.image-preview img {
+  max-width: 100%; /* Ensure image fits container */
+  max-height: 400px; /* Limit height */
+  border-radius: 5px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border: 1px solid #dee2e6;
+}
+
+.watering-schedule {
+  /* From original index.html */
+  background-color: #2ecc71; /* Keep green */
+  color: white;
+  padding: 25px;
+  border-radius: 5px;
+  text-align: center;
+  font-size: 1.1em; /* Slightly larger */
+  margin-top: 30px;
+}
+.watering-schedule h2 {
+  color: white;
+  border-bottom: none;
+  margin-bottom: 15px;
+}
+.watering-schedule p {
+  margin-bottom: 8px;
+}
+.watering-schedule span {
+  font-weight: bold;
+}
+
+pre {
+  background-color: #eee;
+  border: 1px solid #ddd;
+  padding: 15px;
+  border-radius: 4px;
+  white-space: pre-wrap; /* Since CSS 2.1 */
+  white-space: -moz-pre-wrap; /* Mozilla, since 1999 */
+  white-space: -pre-wrap; /* Opera 4-6 */
+  white-space: -o-pre-wrap; /* Opera 7 */
+  word-wrap: break-word; /* Internet Explorer 5.5+ */
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.95em;
+}
+code {
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.back-link {
+  margin-top: 30px;
+  text-align: center;
+  font-size: 0.9em;
+}
+.back-link a {
+  color: #007bff;
+  text-decoration: none;
+}
+.back-link a:hover {
+  text-decoration: underline;
+}
+
+
+/* --- Profile Card Results --- */
+.results.profile-card {
+  display: none; /* Hidden initially */
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.07);
+  margin-top: 30px;
+  overflow: hidden; /* Contain borders and background */
+  padding: 0; /* Remove padding from main container */
+}
+
+.profile-card-content {
+  padding: 25px 30px; /* Padding for top content */
+  display: grid; /* Use grid for layout */
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); /* Responsive columns */
+  gap: 25px; /* Space between columns */
+}
+
+.profile-section {
+  /* Styles for Plant and Pot info sections */
+  padding-bottom: 15px;
+}
+
+.profile-section h3 {
+  font-size: 1.15em;
+  color: #343a40;
+  margin-top: 0;
+  margin-bottom: 15px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+  display: flex; /* Align icon and text */
+  align-items: center;
+}
+
+/* Basic Icon Styling (replace with actual icons if desired) */
+.profile-section h3 .icon {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    margin-right: 8px;
+    opacity: 0.7;
+    /* Add background images or font icons here */
+}
+.icon-plant { background-color: #28a745; mask: url('your-plant-icon.svg') no-repeat center / contain; -webkit-mask: url('your-plant-icon.svg') no-repeat center / contain; } /* Example */
+.icon-pot { background-color: #fd7e14; mask: url('your-pot-icon.svg') no-repeat center / contain; -webkit-mask: url('your-pot-icon.svg') no-repeat center / contain; } /* Example */
+.icon-water { background-color: #007bff; mask: url('your-water-icon.svg') no-repeat center / contain; -webkit-mask: url('your-water-icon.svg') no-repeat center / contain; } /* Example */
+/* --- End Basic Icon Styling --- */
+
+
+.profile-section p {
+  margin-bottom: 8px;
+  font-size: 0.95em;
+  color: #495057;
+  line-height: 1.5;
+}
+.profile-section p strong {
+  color: #212529;
+  min-width: 120px; /* Align labels somewhat */
+  display: inline-block;
+}
+
+/* Footer for Watering Schedule */
+.profile-card-footer.watering-schedule {
+  background-color: #e9f7ef; /* Light green background */
+  color: #0f5132; /* Dark green text */
+  padding: 20px 30px;
+  border-top: 1px solid #d1e7dd;
+  text-align: center;
+  display: block; /* Ensure it takes full width */
+}
+
+.profile-card-footer h3 {
+  font-size: 1.2em;
+  color: #0a3622;
+  margin-top: 0;
+  margin-bottom: 15px;
+  padding-bottom: 0;
+  border-bottom: none;
+  display: flex;
+  align-items: center;
+  justify-content: center; /* Center heading */
+}
+.profile-card-footer h3 .icon {
+    background-color: #0f5132; /* Darker icon */
+}
+
+
+.profile-card-footer #resultWateringScheduleSummary {
+  font-size: 1.1em;
+  font-weight: 500;
+  margin-bottom: 20px;
+}
+
+.profile-card-footer .schedule-details {
+  display: flex;
+  justify-content: space-around; /* Space out details */
+  flex-wrap: wrap; /* Wrap on smaller screens */
+  gap: 15px; /* Space between items if they wrap */
+  max-width: 500px; /* Limit width of details section */
+  margin: 0 auto; /* Center details section */
+}
+
+.profile-card-footer .schedule-details p {
+  margin-bottom: 5px;
+  font-size: 1em;
+  /* Optional: Give fixed width if needed */
+}
+.profile-card-footer .schedule-details p strong {
+   display: block; /* Label on top */
+   font-size: 0.85em;
+   color: #146c43;
+   margin-bottom: 2px;
+}
+.profile-card-footer .schedule-details span {
+   font-weight: 600;
+}

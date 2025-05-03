@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test Watering Schedule Calculation</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+  </head>
+  <body>
+    <div class="container">
+      <h1>
+        <a href="/" style="text-decoration: none; color: inherit">🌱</a> Test
+        Watering Schedule Calculation
+      </h1>
+      <p>
+        Provide plant and pot information manually to calculate the watering
+        schedule.
+      </p>
+
+      <form id="scheduleForm">
+        <fieldset>
+          <legend>Plant Information</legend>
+          <div class="form-group">
+            <label for="plantCommonName">Common Name (optional):</label>
+            <input
+              type="text"
+              id="plantCommonName"
+              class="form-control"
+              placeholder="e.g., Peace Lily"
+            />
+          </div>
+          <div class="form-group">
+            <label for="plantScientificName">Scientific Name (optional):</label>
+            <input
+              type="text"
+              id="plantScientificName"
+              class="form-control"
+              placeholder="e.g., Spathiphyllum wallisii"
+            />
+          </div>
+          <div class="form-group">
+            <label for="plantFamily">Plant Family:</label>
+            <input
+              list="family-list"
+              id="plantFamily"
+              class="form-control"
+              placeholder="e.g., Araceae"
+              required
+            />
+            <datalist id="family-list">
+              {% for family in known_families %}
+              <option value="{{ family }}">{% endfor %}</option>
+            </datalist>
+
+            <small class="form-text text-muted"
+              >Select or type a family. Determines moisture needs. 'default'
+              uses medium.</small
+            >
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Pot Information</legend>
+          <div class="form-group">
+            <label for="potVolume">Estimated Pot Volume (Liters):</label>
+            <input
+              type="number"
+              id="potVolume"
+              min="0.1"
+              step="0.1"
+              class="form-control"
+              placeholder="e.g., 3.5"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="potDiameter">Estimated Diameter (cm, optional):</label>
+            <input
+              type="number"
+              id="potDiameter"
+              min="1"
+              step="1"
+              class="form-control"
+              placeholder="e.g., 20"
+            />
+          </div>
+        </fieldset>
+
+        <button type="submit" class="btn btn-primary">
+          Calculate Schedule
+        </button>
+      </form>
+
+      <div class="loading" id="loading">
+        <p>Calculating... 💧</p>
+      </div>
+
+      <div class="error" id="error"></div>
+
+      <div class="results" id="results">
+        <h2>Calculated Schedule:</h2>
+        <pre><code id="resultData" style="white-space: pre-wrap; word-wrap: break-word;"></code></pre>
+      </div>
+      <div class="back-link">
+        <a href="/">← Back to Main Calculator</a>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById("scheduleForm");
+      const plantCommonNameInput = document.getElementById("plantCommonName");
+      const plantScientificNameInput = document.getElementById(
+        "plantScientificName"
+      );
+      const plantFamilyInput = document.getElementById("plantFamily");
+      const potVolumeInput = document.getElementById("potVolume");
+      const potDiameterInput = document.getElementById("potDiameter"); // Optional field
+
+      const loadingDiv = document.getElementById("loading");
+      const errorDiv = document.getElementById("error");
+      const resultsDiv = document.getElementById("results");
+      const resultData = document.getElementById("resultData");
+
+      form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        clearFeedback();
+        loadingDiv.style.display = "block";
+
+        // Construct the JSON payload
+        const plantInfo = {
+          common_name: plantCommonNameInput.value || "N/A",
+          scientific_name: plantScientificNameInput.value || "N/A",
+          family: plantFamilyInput.value || "default", // Default if empty
+          confidence: 1.0, // Assume user input is confident
+        };
+
+        const potInfo = {
+          estimated_volume_liters: parseFloat(potVolumeInput.value),
+          diameter_cm: potDiameterInput.value
+            ? parseFloat(potDiameterInput.value)
+            : null, // Include if provided
+          confidence: "user_provided",
+        };
+
+        // Basic validation
+        if (!plantInfo.family) {
+          showError("Plant Family is required.");
+          loadingDiv.style.display = "none";
+          return;
+        }
+        if (
+          isNaN(potInfo.estimated_volume_liters) ||
+          potInfo.estimated_volume_liters <= 0
+        ) {
+          showError("Valid Pot Volume (Liters) is required.");
+          loadingDiv.style.display = "none";
+          return;
+        }
+
+        const payload = {
+          plant_info: plantInfo,
+          pot_info: potInfo,
+        };
+
+        try {
+          // Use the dedicated test endpoint
+          const response = await fetch("/test/calculate-schedule", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(
+              data.error || `HTTP error! status: ${response.status}`
+            );
+          }
+
+          // Display the raw JSON result
+          resultData.textContent = JSON.stringify(data, null, 2);
+          resultsDiv.style.display = "block";
+        } catch (error) {
+          console.error("Calculation Error:", error);
+          showError(`Calculation failed: ${error.message}`);
+        } finally {
+          loadingDiv.style.display = "none";
+        }
+      });
+
+      function clearFeedback() {
+        errorDiv.style.display = "none";
+        errorDiv.textContent = "";
+        resultsDiv.style.display = "none";
+        resultData.textContent = "";
+      }
+
+      function showError(message) {
+        errorDiv.textContent = message;
+        errorDiv.style.display = "block";
+        resultsDiv.style.display = "none";
+      }
+    </script>
+  </body>
+</html>
