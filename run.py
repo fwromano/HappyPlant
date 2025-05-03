@@ -1,216 +1,92 @@
 #!/usr/bin/env python3
 """
-All-in-one script to set up and run the Plant Watering Calculator
+Launcher for 🌱 HappyPlant — creates/uses venv & installs only *missing* deps
 """
-import os
-import sys
-import subprocess
-import platform
-import time
-import webbrowser
-import shutil
+
+import os, sys, subprocess, platform, time, webbrowser, shutil, json
 from pathlib import Path
+from threading import Thread
+from importlib.metadata import version, PackageNotFoundError
 
-# Colors for terminal output
-class Colors:
-    GREEN = '\033[0;32m'
-    YELLOW = '\033[1;33m'
-    RED = '\033[0;31m'
-    NC = '\033[0m'
+# ── colours ────────────────────────────────────────────────────────────────
+class C: G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
+say = lambda m,c=C.G: print(f"{c}{m}{C.N}")
 
-def print_colored(message, color):
-    """Print colored text to terminal"""
-    print(f"{color}{message}{Colors.NC}")
-
-def check_python_version():
-    """Check if current Python version is suitable"""
-    if sys.version_info < (3, 7):
-        print_colored("Error: Python 3.7+ is required", Colors.RED)
-        sys.exit(1)
-    return sys.version_info
-
-def find_python_39_plus():
-    """Find Python 3.9+ installation on the system"""
-    python_commands = ['python3.12', 'python3.11', 'python3.10', 'python3.9', 'python3', 'python']
-    
-    for cmd in python_commands:
+# ── utility ────────────────────────────────────────────────────────────────
+def py39():
+    """return path to a python ≥3.9 interpreter"""
+    if sys.version_info >= (3,9):
+        return sys.executable
+    for cmd in ('python3.12','python3.11','python3.10','python3.9','python3'):
         try:
-            result = subprocess.run([cmd, '-c', 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")'], 
-                                  capture_output=True, text=True)
-            if result.returncode == 0:
-                version_parts = result.stdout.strip().split('.')
-                major, minor = int(version_parts[0]), int(version_parts[1])
-                if major >= 3 and minor >= 9:
-                    print_colored(f"Found {cmd} version {major}.{minor}", Colors.GREEN)
-                    return cmd
-        except FileNotFoundError:
-            continue
-    
-    return None
+            out = subprocess.check_output([cmd,'-c','import sys, json;print(json.dumps(sys.version_info[:2]))'],
+                                          text=True)
+            if tuple(json.loads(out)) >= (3,9):
+                return cmd
+        except Exception:
+            pass
+    say("Python ≥3.9 not found.", C.R); sys.exit(1)
 
-def check_dependencies_installed():
-    """Check if required dependencies are installed"""
-    try:
-        # Check if requirements.txt packages are installed
-        result = subprocess.run([sys.executable, "-m", "pip", "show", "Flask", "opencv-python-headless", "numpy", "Pillow", "requests", "Werkzeug", "python-dotenv"], 
-                              capture_output=True, text=True)
-        return result.returncode == 0
-    except Exception:
-        return False
+def venv_py():
+    return Path("venv")/("Scripts" if platform.system()=="Windows" else "bin")/"python"
 
-def install_dependencies():
-    """Install required dependencies from requirements.txt"""
-    print_colored("Installing dependencies...", Colors.YELLOW)
-    
-    # First, upgrade pip
-    subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], check=False)
-    
-    # Then install from requirements.txt if it exists
-    if os.path.exists('requirements.txt'):
-        subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"], check=True)
+def unsatisfied(requirements):
+    """
+    Return list of packages that are missing or wrong‑version vs requirements.txt
+    """
+    missing=[]
+    for line in requirements:
+        line=line.strip()
+        if not line or line.startswith('#'): continue
+        pkg, req_ver = (line.split('==')+[None])[:2]
+        try:
+            cur_ver = version(pkg)
+            if req_ver and cur_ver != req_ver:
+                missing.append(pkg)
+        except PackageNotFoundError:
+            missing.append(pkg)
+    return missing
+
+def ensure_venv():
+    if not Path('venv').exists():
+        say("Creating virtual env …", C.Y)
+        subprocess.check_call([py39(), "-m", "venv", "venv"])
+    if Path(sys.prefix).resolve()!=Path("venv").resolve():
+        subprocess.check_call([str(venv_py()), __file__]); sys.exit(0)
+
+def ensure_deps():
+    req_path=Path('requirements.txt')
+    if not req_path.exists(): say("requirements.txt missing", C.R); sys.exit(1)
+    needs = unsatisfied(req_path.read_text().splitlines())
+    if needs:
+        say(f"Installing/upgrading: {', '.join(needs)}", C.Y)
+        subprocess.check_call([str(venv_py()), "-m", "pip", "install",
+                               "--upgrade", "--quiet",
+                               "-r", "requirements.txt"])
     else:
-        print_colored("Error: requirements.txt not found!", Colors.RED)
-        sys.exit(1)
+        say("All dependencies satisfied ✔", C.G)
 
-def setup_virtual_environment():
-    """Create and activate virtual environment"""
-    venv_path = Path("venv")
-    
-    if not venv_path.exists():
-        # Check if we need Python 3.9+
-        current_version = sys.version_info
-        if current_version < (3, 9):
-            print_colored(f"Current Python version {current_version.major}.{current_version.minor} is too old", Colors.YELLOW)
-            python_cmd = find_python_39_plus()
-            
-            if python_cmd:
-                print_colored(f"Creating virtual environment with {python_cmd}...", Colors.YELLOW)
-                subprocess.run([python_cmd, "-m", "venv", "venv"], check=True)
-            else:
-                print_colored("Error: No Python 3.9+ found on system", Colors.RED)
-                print_colored("Please install Python 3.9 or higher", Colors.RED)
-                print_colored("Visit: https://www.python.org/downloads/", Colors.GREEN)
-                sys.exit(1)
-        else:
-            print_colored("Creating virtual environment...", Colors.YELLOW)
-            subprocess.run([sys.executable, "-m", "venv", "venv"], check=True)
-        
-    # Get path to virtual environment Python
-    if platform.system() == "Windows":
-        python_exe = venv_path / "Scripts" / "python.exe"
-    else:
-        python_exe = venv_path / "bin" / "python"
-    
-    return str(python_exe)
+def open_browser(port):
+    time.sleep(2); webbrowser.open(f"http://localhost:{port}")
 
-def create_project_structure():
-    """Create necessary directories"""
-    directories = ['templates', 'uploads']
-    for directory in directories:
-        os.makedirs(directory, exist_ok=True)
-
-def check_and_move_files():
-    """Check if files are in correct locations"""
-    # Check if index.html needs to be moved to templates
-    if os.path.exists('index.html') and not os.path.exists('templates/index.html'):
-        print_colored("Moving index.html to templates directory...", Colors.YELLOW)
-        shutil.move('index.html', 'templates/index.html')
-    
-    # Create .env file from .env.example if it doesn't exist
-    if not os.path.exists('.env') and os.path.exists('.env.example'):
-        print_colored("Creating .env file from .env.example...", Colors.YELLOW)
-        shutil.copy('.env.example', '.env')
-        print_colored("Please edit .env file with your API keys", Colors.YELLOW)
-
-def check_api_keys():
-    """Check if API keys are configured"""
-    env_file = '.env'
-    if os.path.exists(env_file):
-        with open(env_file, 'r') as f:
-            content = f.read()
-            if 'PLANTNET_API_KEY=your_plantnet_api_key_here' in content:
-                print_colored("⚠️  Warning: Please update your API keys in .env file", Colors.YELLOW)
-                time.sleep(2)
-
-def launch_browser(port):
-    """Launch web browser with the application URL"""
-    url = f"http://localhost:{port}"
-    print_colored(f"Opening browser to {url}", Colors.YELLOW)
-    time.sleep(2)  # Give Flask time to start
-    webbrowser.open(url)
-
+# ── main ───────────────────────────────────────────────────────────────────
 def main():
-    """Main execution function"""
-    print_colored("🌱 Plant Watering Calculator", Colors.GREEN)
-    print_colored("==============================", Colors.GREEN)
-    
-    # Check Python version
-    current_version = check_python_version()
-    
-    # Create project structure
-    create_project_structure()
-    
-    # Check if we need to set up virtual environment
-    if not os.path.exists('venv'):
-        python_exe = setup_virtual_environment()
-        
-        # Run this script again with the virtual environment Python
-        print_colored("Restarting with virtual environment...", Colors.YELLOW)
-        subprocess.run([python_exe, __file__], check=True)
-        sys.exit(0)
-    else:
-        # Check if we're actually running in the virtual environment
-        in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
-        
-        if not in_venv:
-            # We're not in the virtual environment - get the venv python and restart
-            if platform.system() == "Windows":
-                python_exe = Path("venv") / "Scripts" / "python.exe"
-            else:
-                python_exe = Path("venv") / "bin" / "python"
-            
-            print_colored("Activating virtual environment...", Colors.YELLOW)
-            subprocess.run([str(python_exe), __file__], check=True)
-            sys.exit(0)
-        
-        # Already in virtual environment, continue setup
-        
-        # Check if dependencies are installed
-        if not check_dependencies_installed():
-            install_dependencies()
-        
-        # Check and move files
-        check_and_move_files()
-        
-        # Check API keys
-        check_api_keys()
-        
-        # Check if app.py exists
-        if not os.path.exists('app.py'):
-            print_colored("Error: app.py not found!", Colors.RED)
-            print_colored("Please ensure app.py is in the current directory.", Colors.RED)
-            sys.exit(1)
-        
-        # Always use port 5001 as requested
-        port = 5001
-        
-        # Launch browser after a delay
-        from threading import Thread
-        t = Thread(target=launch_browser, args=(port,))
-        t.daemon = True
-        t.start()
-        
-        # Start the Flask application
-        print_colored("\nStarting Plant Watering Calculator...", Colors.GREEN)
-        print_colored(f"Running on port {port}", Colors.GREEN)
-        
-        # Set environment variables for Flask
-        os.environ['FLASK_ENV'] = 'development'
-        os.environ['FLASK_DEBUG'] = 'True'
-        
-        # Run the Flask app
-        import app
-        app.app.run(debug=True, host='0.0.0.0', port=port, use_reloader=False)
+    say("🌱 HappyPlant Launcher", C.G)
+    os.makedirs('templates', exist_ok=True); os.makedirs('uploads', exist_ok=True)
+    if Path('index.html').exists() and not Path('templates/index.html').exists():
+        shutil.move('index.html','templates/index.html')
+    if not Path('.env').exists() and Path('.env.example').exists():
+        shutil.copy('.env.example','.env'); say("👉  Edit .env with API keys", C.Y)
 
-if __name__ == "__main__":
+    ensure_venv()
+    ensure_deps()
+
+    port=5001
+    Thread(target=open_browser, args=(port,), daemon=True).start()
+    os.environ.update(FLASK_ENV="development", FLASK_DEBUG="True")
+    say("Starting Flask on http://localhost:5001 …", C.G)
+    import app
+    app.app.run(debug=True, host="0.0.0.0", port=port, use_reloader=False)
+
+if __name__=="__main__":
     main()

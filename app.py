@@ -5,10 +5,11 @@ import os
 import requests
 import cv2
 import numpy as np
-# from PIL import Image # Not currently used
-# import io # Not currently used
+import math
+from PIL import Image 
+import pillow_heif
+from pillow_heif import open_heif
 from werkzeug.utils import secure_filename
-# import json # Not currently used directly
 from datetime import datetime
 from dotenv import load_dotenv
 import platform # Keep for potential future use
@@ -20,7 +21,7 @@ load_dotenv()
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif', 'webp'} # Added webp
+app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif', 'webp', "heic", "heif"} # Added webp
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'a-strong-dev-secret-key-please-change')
 
 # Ensure upload folder exists
@@ -36,6 +37,48 @@ if not PLANTNET_API_KEY:
     print("   Please set it up in your .env file.")
     print("   Photo identification will likely fail.\n")
 
+
+
+
+def load_image_with_optional_depth(path: str):
+    """
+    Returns   (bgr_image, depth_map_m | None)
+    • Handles .heic/.heif with embedded Apple portrait‑depth
+    • Falls back to cv2.imread for all other formats
+    • No pyheif dependency (pillow‑heif wheel contains libheif)
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in ('.heic', '.heif'):
+        return cv2.imread(path), None
+
+    try:
+        heif = open_heif(path, load_metadata=True, convert_hdr_to_8bit=True)
+    except Exception as e:
+        print(f"HEIF read error: {e}")
+        return cv2.imread(path), None
+
+    # RGB frame -------------------------------------------------------
+    pil_img = heif.to_pillow()
+    bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+
+    # Depth map (if any) ---------------------------------------------
+    depth = None
+    meta_blocks = getattr(heif, "metadata", None)
+    if meta_blocks is None:
+        meta_blocks = heif.info.get("metadata", [])
+
+
+    for m in meta_blocks:
+        # Apple tags depth aux images with “…aux:depth” (sometimes “…auxl” older)
+        if b"depth" in m.get("identifier", b""):
+            w, h = m["width"], m["height"]
+            raw = np.frombuffer(m["data"], np.uint16).reshape(h, w)
+            # Very rough disparity→depth (meters). 57 mm baseline for iPhone 13 Pro
+            depth = 0.057 / (raw.astype(np.float32) + 1e-5)
+            break  # take first depth block
+
+    return bgr, depth
+    
 class SmartPlantWateringSystem:
     def __init__(self, plantnet_api_key=None, trefle_api_key=None):
         self.plantnet_api_key = plantnet_api_key
@@ -115,78 +158,121 @@ class SmartPlantWateringSystem:
             print(traceback.format_exc())
             return {'error': f'An unexpected error occurred during identification: {e}'}
 
-    # --- Using the Pot Size Estimation with improved heuristics ---
+
     def estimate_pot_size(self, image_path):
-        """Estimate pot size using computer vision (EXPERIMENTAL - Improved Heuristics)"""
-        print(f"Estimating pot size for: {image_path}")
+        """
+        Robust pot‑geometry estimator.
+        • Uses HEIC depth if available     • Never raises 'Could not isolate pot'
+        • Returns legacy 'diameter_cm' for UI plus rich fields.
+        """
+        img, depth = load_image_with_optional_depth(image_path)
+        if img is None:
+            return {"error": "Failed to load image."}
+
+        H, W = img.shape[:2]
+        max_dim = max(H, W)
+
+        # --- pre‑process -------------------------------------------------
+        gray  = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(12,12))
+        gray  = clahe.apply(gray)
+        blur  = cv2.GaussianBlur(gray, (7,7), 0)
+        edges = cv2.Canny(blur, 40, 120)
+
+        cnts, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not cnts:
+            return {"error": "No contours detected."}
+
+        # --- heuristic passes to choose the pot contour ------------------
+        def pick_contour(th_area, th_ratio):
+            for c in sorted(cnts, key=cv2.contourArea, reverse=True):
+                area = cv2.contourArea(c)
+                if area < th_area * H * W:          # area too small
+                    continue
+                x,y,w,h = cv2.boundingRect(c)
+                ar = w/h if h else 0
+                if th_ratio[0] <= ar <= th_ratio[1]:
+                    return c
+            return None
+
+        pot = (pick_contour(0.08, (0.5, 3.0)) or      # normal close‑up
+            pick_contour(0.03, (0.3, 4.0)) or      # zoomed‑out
+            max(cnts, key=cv2.contourArea))        # last resort
+
+        conf_note = "medium"
+        if pot is cnts[-1]:   # resort case
+            conf_note = "low (fallback contour)"
+
+        # --- ellipse fit -------------------------------------------------
+        ys = pot[:,0,1]
+        y_min, y_max = ys.min(), ys.max()
+        h_px = y_max - y_min
+        top_pts = pot[ys < y_min + 0.25*h_px]
+        bot_pts = pot[ys > y_max - 0.25*h_px]
+        if len(top_pts) < 5 or len(bot_pts) < 5:
+            return quick_cylinder(h_px, max_dim, conf_note)
+
         try:
-            image = cv2.imread(image_path)
-            if image is None:
-                print(f"Error: Could not load image from {image_path}")
-                return {'error': 'Failed to load image file.'}
+            top_ell = cv2.fitEllipse(top_pts)
+            bot_ell = cv2.fitEllipse(bot_pts)
+        except cv2.error:
+            return quick_cylinder(h_px, max_dim, "low (ellipse fail)")
 
-            img_height, img_width = image.shape[:2]
-            img_area = img_height * img_width
-            max_img_dim = max(img_height, img_width)
+        d_top_px = max(top_ell[1]);  d_bot_px = max(bot_ell[1])
+        r_top_px, r_bot_px = d_top_px/2, d_bot_px/2
+        slope_deg = math.degrees(math.atan(abs(r_top_px - r_bot_px) / h_px))
+        ratio = d_bot_px / d_top_px
+        shape = "cylinder" if 0.9<=ratio<=1.1 else ("cone" if ratio<=0.4 else "frustum")
 
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            blurred = cv2.GaussianBlur(gray, (7, 7), 0)
-            edges = cv2.Canny(blurred, 50, 150)
-            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # --- scale conversion -------------------------------------------
+        if depth is not None and not np.all(np.isnan(depth)):
+            d1 = depth[int(top_ell[0][1]), int(top_ell[0][0])]
+            d2 = depth[int(bot_ell[0][1]), int(bot_ell[0][0])]
+            depth_m = np.nanmean([d1, d2])
+            m_per_px = depth_m / 2770.0          # iPhone 13 Pro equiv. focal length
+            cm = lambda px: px * m_per_px * 100
+            conf_note = "high (depth)"
+        else:
+            cm = lambda px: np.clip(5 + px/max_dim*40, 5, 50)
 
-            if not contours:
-                print("Warning: No contours found.")
-                return {'diameter_cm': 15.0, 'estimated_volume_liters': 1.5, 'confidence': 'low (no contours)'}
+        d_top_cm = cm(d_top_px); d_bot_cm = cm(d_bot_px); h_cm = cm(h_px)
 
-            min_contour_area = img_area * 0.01
-            large_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_contour_area]
+        # --- volume ------------------------------------------------------
+        if shape == "cylinder":
+            vol_cm3 = math.pi*(d_top_cm/2)**2*h_cm
+        elif shape == "cone":
+            vol_cm3 = math.pi*(d_bot_cm/2)**2*h_cm/3
+        else:
+            R,r = d_top_cm/2, d_bot_cm/2
+            vol_cm3 = math.pi*h_cm*(R**2+R*r+r**2)/3
+        vol_L = round(np.clip(vol_cm3/1000, 0.1, 75), 2)
 
-            if not large_contours:
-                print(f"Warning: No contours > {min_contour_area:.0f} pixels. Using largest.")
-                if contours: largest_contour = max(contours, key=cv2.contourArea); initial_confidence = 'low (using small contour)'
-                else: return {'diameter_cm': 15.0, 'estimated_volume_liters': 1.5, 'confidence': 'low (no contours)'}
-            else:
-                 reasonable_contours = []
-                 for cnt in large_contours:
-                     x, y, w, h = cv2.boundingRect(cnt)
-                     if w > 0 and h > 0:
-                         aspect_ratio = w / float(h)
-                         if 0.3 < aspect_ratio < 3.0: reasonable_contours.append(cnt)
-                 if not reasonable_contours:
-                      print("Warning: No large contours with reasonable aspect ratio. Using largest.")
-                      largest_contour = max(large_contours, key=cv2.contourArea); initial_confidence = 'low (bad aspect ratio)'
-                 else:
-                      largest_contour = max(reasonable_contours, key=cv2.contourArea); initial_confidence = 'medium (good contour found)'
+        return {
+            "shape": shape,
+            "top_diameter_cm": round(d_top_cm,1),
+            "bottom_diameter_cm": round(d_bot_cm,1),
+            "height_cm": round(h_cm,1),
+            "slope_deg": round(slope_deg,1),
+            "estimated_volume_liters": vol_L,
+            "diameter_cm": round((d_top_cm+d_bot_cm)/2,1),  # legacy field
+            "confidence": conf_note
+        }
 
-            x, y, w, h = cv2.boundingRect(largest_contour)
-            dimension_pixels = max(w, h)
-            pot_dimension_fraction = dimension_pixels / max_img_dim
-            diameter_cm = 5.0 + pot_dimension_fraction * 40.0
-            min_diameter, max_diameter = 5.0, 50.0
-            clamped_diameter_cm = max(min_diameter, min(diameter_cm, max_diameter))
-            final_confidence = initial_confidence
-            if clamped_diameter_cm != diameter_cm: final_confidence = 'low (heuristic out of range)'
-            diameter_cm = clamped_diameter_cm
-
-            radius_cm = diameter_cm / 2; height_cm = diameter_cm # Simple assumption
-            volume_liters = (np.pi * (radius_cm ** 2) * height_cm) / 1000.0
-            min_volume, max_volume = 0.1, 75.0
-            clamped_volume_liters = max(min_volume, min(volume_liters, max_volume))
-            if clamped_volume_liters != volume_liters and final_confidence != 'low (heuristic out of range)':
-                 if 'medium' in final_confidence: final_confidence = 'low (volume out of range)'
-            volume_liters = clamped_volume_liters
-
-            result = {'diameter_cm': round(diameter_cm, 1), 'estimated_volume_liters': round(volume_liters, 2), 'confidence': final_confidence }
-            print(f"Pot Size Estimation Result: {result}")
-            return result
-        except cv2.error as e:
-            print(f"OpenCV Error during pot size estimation: {e}"); print(traceback.format_exc())
-            return {'error': f'OpenCV processing failed: {e}'}
-        except Exception as e:
-            print(f"Unexpected error during pot size estimation: {e}"); print(traceback.format_exc())
-            return {'diameter_cm': 15.0, 'estimated_volume_liters': 1.5, 'confidence': f'error ({e})'}
-
-
+    # --------------------------------------------------------------------
+    # helper: quick cylinder when ellipse fails
+    # --------------------------------------------------------------------
+    def quick_cylinder(h_px, max_dim, note):
+        px2cm = lambda px: np.clip(5 + px/max_dim*40, 5, 50)
+        d_cm = px2cm(h_px*0.8)         # assume height≈diameter
+        h_cm = px2cm(h_px)
+        vol_L = round(np.clip(math.pi*(d_cm/2)**2*h_cm/1000, 0.1, 75), 2)
+        return {
+            "shape": "cylinder", "top_diameter_cm": round(d_cm,1),
+            "bottom_diameter_cm": round(d_cm,1), "height_cm": round(h_cm,1),
+            "slope_deg": 0.0, "estimated_volume_liters": vol_L,
+            "diameter_cm": round(d_cm,1), "confidence": note
+        }
+    
     def get_watering_schedule(self, plant_info, pot_info):
         """Calculate watering schedule based on plant and pot info"""
         if not isinstance(plant_info, dict) or not isinstance(pot_info, dict): return {'error': 'Invalid input: plant_info/pot_info must be dictionaries.'}
