@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Plant Watering Calculator</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      .container {
+        background-color: white;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        color: #2c3e50;
+        text-align: center;
+      }
+      .tabs {
+        display: flex;
+        margin-bottom: 20px;
+        border-bottom: 1px solid #ddd;
+      }
+      .tab {
+        padding: 10px 20px;
+        cursor: pointer;
+        border: none;
+        background: none;
+        font-size: 16px;
+        border-bottom: 2px solid transparent;
+      }
+      .tab.active {
+        border-bottom: 2px solid #3498db;
+        color: #3498db;
+      }
+      .tab-content {
+        display: none;
+      }
+      .tab-content.active {
+        display: block;
+      }
+      .upload-section {
+        margin: 30px 0;
+        text-align: center;
+      }
+      .manual-section {
+        margin: 30px 0;
+      }
+      .form-group {
+        margin-bottom: 20px;
+      }
+      .form-group label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      .form-group input {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+      .upload-btn,
+      .calculate-btn {
+        display: inline-block;
+        padding: 10px 30px;
+        background-color: #3498db;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+      }
+      .upload-btn:hover,
+      .calculate-btn:hover {
+        background-color: #2980b9;
+      }
+      #fileInput {
+        display: none;
+      }
+      .results {
+        margin-top: 30px;
+        display: none;
+      }
+      .result-section {
+        margin: 20px 0;
+        padding: 15px;
+        background-color: #f8f9fa;
+        border-radius: 5px;
+      }
+      .loading {
+        text-align: center;
+        display: none;
+        margin: 20px 0;
+      }
+      .error {
+        color: #e74c3c;
+        text-align: center;
+        margin: 20px 0;
+        display: none;
+      }
+      .image-preview {
+        max-width: 100%;
+        margin: 20px 0;
+        text-align: center;
+      }
+      .image-preview img {
+        max-width: 500px;
+        border-radius: 5px;
+      }
+      .watering-schedule {
+        background-color: #2ecc71;
+        color: white;
+        padding: 20px;
+        border-radius: 5px;
+        text-align: center;
+        font-size: 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🌱 Plant Watering Calculator</h1>
+      <p style="text-align: center">
+        Get personalized watering recommendations for your plants
+      </p>
+
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('photo')">
+          📸 Upload Photo
+        </button>
+        <button class="tab" onclick="switchTab('manual')">
+          ✏️ Manual Entry
+        </button>
+      </div>
+
+      <div id="photoTab" class="tab-content active">
+        <div class="upload-section">
+          <button
+            class="upload-btn"
+            onclick="document.getElementById('fileInput').click()"
+          >
+            Upload Plant Photo
+          </button>
+          <input type="file" id="fileInput" accept="image/*" />
+        </div>
+        <div class="image-preview" id="imagePreview"></div>
+      </div>
+
+      <div id="manualTab" class="tab-content">
+        <div class="manual-section">
+          <div class="form-group">
+            <label for="plantName">Plant Name:</label>
+            <input
+              type="text"
+              id="plantName"
+              placeholder="e.g., Snake Plant, Pothos, Peace Lily"
+            />
+          </div>
+          <div class="form-group">
+            <label for="potVolume">Pot Volume (liters):</label>
+            <input
+              type="number"
+              id="potVolume"
+              min="0.1"
+              step="0.1"
+              placeholder="e.g., 2.5"
+            />
+          </div>
+          <button class="calculate-btn" onclick="calculateManual()">
+            Calculate Watering Schedule
+          </button>
+        </div>
+      </div>
+
+      <div class="loading" id="loading">
+        <p>Analyzing your plant... 🔍</p>
+      </div>
+
+      <div class="error" id="error"></div>
+
+      <div class="results" id="results">
+        <div class="result-section">
+          <h2>Plant Information</h2>
+          <p><strong>Name:</strong> <span id="plantName"></span></p>
+          <p>
+            <strong>Scientific Name:</strong> <span id="scientificName"></span>
+          </p>
+          <p><strong>Family:</strong> <span id="plantFamily"></span></p>
+          <p>
+            <strong>Identification Confidence:</strong>
+            <span id="confidence"></span>%
+          </p>
+        </div>
+
+        <div class="result-section">
+          <h2>Pot Information</h2>
+          <p>
+            <strong>Estimated Diameter:</strong>
+            <span id="potDiameter"></span> cm
+          </p>
+          <p>
+            <strong>Estimated Volume:</strong>
+            <span id="potVolume"></span> liters
+          </p>
+        </div>
+
+        <div class="watering-schedule">
+          <h2>Your Watering Schedule</h2>
+          <p id="wateringSchedule"></p>
+          <p><strong>Amount:</strong> <span id="waterAmount"></span>ml</p>
+          <p>
+            <strong>Frequency:</strong> Every <span id="frequency"></span> days
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function switchTab(tab) {
+        document
+          .querySelectorAll(".tab")
+          .forEach((t) => t.classList.remove("active"));
+        document
+          .querySelectorAll(".tab-content")
+          .forEach((tc) => tc.classList.remove("active"));
+
+        if (tab === "photo") {
+          document
+            .querySelector("[onclick=\"switchTab('photo')\"]")
+            .classList.add("active");
+          document.getElementById("photoTab").classList.add("active");
+        } else {
+          document
+            .querySelector("[onclick=\"switchTab('manual')\"]")
+            .classList.add("active");
+          document.getElementById("manualTab").classList.add("active");
+        }
+
+        // Clear previous results
+        clearResults();
+      }
+
+      function clearResults() {
+        document.getElementById("results").style.display = "none";
+        document.getElementById("error").style.display = "none";
+        document.getElementById("loading").style.display = "none";
+      }
+
+      document
+        .getElementById("fileInput")
+        .addEventListener("change", function (e) {
+          const file = e.target.files[0];
+          if (file) {
+            // Show image preview
+            const reader = new FileReader();
+            reader.onload = function (e) {
+              const preview = document.getElementById("imagePreview");
+              preview.innerHTML = `<img src="${e.target.result}" alt="Plant preview">`;
+            };
+            reader.readAsDataURL(file);
+
+            // Upload file
+            uploadFile(file);
+          }
+        });
+
+      function uploadFile(file) {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        document.getElementById("loading").style.display = "block";
+        clearResults();
+
+        fetch("/upload", {
+          method: "POST",
+          body: formData,
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            document.getElementById("loading").style.display = "none";
+
+            if (data.error) {
+              showError(data.error);
+            } else {
+              showResults(data);
+            }
+          })
+          .catch((error) => {
+            document.getElementById("loading").style.display = "none";
+            showError("An error occurred while processing your image.");
+          });
+      }
+
+      function calculateManual() {
+        const plantName = document.getElementById("plantName").value;
+        const potVolume = document.getElementById("potVolume").value;
+
+        if (!plantName || !potVolume) {
+          showError("Please enter both plant name and pot volume.");
+          return;
+        }
+
+        document.getElementById("loading").style.display = "block";
+        clearResults();
+
+        fetch("/manual-calculate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            plant_name: plantName,
+            pot_volume: potVolume,
+          }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            document.getElementById("loading").style.display = "none";
+
+            if (data.error) {
+              showError(data.error);
+            } else {
+              showResults(data);
+            }
+          })
+          .catch((error) => {
+            document.getElementById("loading").style.display = "none";
+            showError("An error occurred while calculating watering schedule.");
+          });
+      }
+
+      function showError(message) {
+        const errorDiv = document.getElementById("error");
+        errorDiv.textContent = message;
+        errorDiv.style.display = "block";
+      }
+
+      function showResults(data) {
+        // Plant information
+        document.getElementById("plantName").textContent =
+          data.plant_info.common_name || "N/A";
+        document.getElementById("scientificName").textContent =
+          data.plant_info.scientific_name;
+        document.getElementById("plantFamily").textContent =
+          data.plant_info.family;
+        document.getElementById("confidence").textContent = Math.round(
+          data.plant_info.confidence * 100
+        );
+
+        // Pot information
+        document.getElementById("potDiameter").textContent =
+          data.pot_info.diameter_cm.toFixed(1);
+        document.getElementById("potVolume").textContent =
+          data.pot_info.estimated_volume_liters;
+
+        // Watering schedule
+        document.getElementById("wateringSchedule").textContent =
+          data.watering_schedule.schedule;
+        document.getElementById("waterAmount").textContent =
+          data.watering_schedule.water_amount_ml;
+        document.getElementById("frequency").textContent =
+          data.watering_schedule.frequency_days;
+
+        document.getElementById("results").style.display = "block";
+      }
+    </script>
+  </body>
+</html>
