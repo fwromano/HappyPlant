@@ -423,7 +423,7 @@
         const confidence = plantInfo.confidence;
         setText(
           "resultConfidence",
-          typeof confidence === "number" ? (confidence * 100).toFixed(1) : "N/A"
+          typeof confidence === "number" ? confidence.toFixed(1) : "N/A"
         );
 
         // Populate Pot Information
