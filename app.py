@@ -157,94 +157,113 @@ class SmartPlantWateringSystem:
             return {'error': f'An unexpected error occurred during identification: {e}'}
 
 
+
     def estimate_pot_size(self, image_path):
-        """Estimate pot size using computer vision (EXPERIMENTAL)"""
+        """Estimate pot size using computer vision (EXPERIMENTAL - Improved Heuristics)"""
+        print(f"Estimating pot size for: {image_path}")
         try:
-            # Load image using OpenCV
             image = cv2.imread(image_path)
             if image is None:
                 print(f"Error: Could not load image from {image_path}")
                 return {'error': 'Failed to load image file.'}
 
-            # --- Pot Detection Logic (Still very basic, high chance of inaccuracy) ---
-            # Convert to grayscale and blur
+            img_height, img_width = image.shape[:2]
+            img_area = img_height * img_width
+            max_img_dim = max(img_height, img_width) # Used for scaling heuristic
+
+            # --- Basic Image Processing ---
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             blurred = cv2.GaussianBlur(gray, (7, 7), 0)
+            edges = cv2.Canny(blurred, 50, 150) # Parameters might need tuning
 
-            # Edge detection
-            edges = cv2.Canny(blurred, 50, 150)
-
-            # Find contours
+            # --- Contour Finding and Filtering ---
             contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             if not contours:
-                 print("Warning: No contours found via edge detection.")
-                 # Maybe return a default or indicate failure more clearly?
-                 return {
-                        'diameter_cm': 15.0, # Default fallback
-                        'estimated_volume_liters': 1.5,
-                        'confidence': 'low (no contours detected)'
-                    }
+                print("Warning: No contours found.")
+                return {'diameter_cm': 15.0, 'estimated_volume_liters': 1.5, 'confidence': 'low (no contours)'}
 
-            # Filter small contours likely noise (adjust area threshold as needed)
-            min_contour_area = image.shape[0] * image.shape[1] * 0.01 # Require contour area > 1% of image area
+            # Filter 1: Minimum Area
+            min_contour_area = img_area * 0.01 # Require > 1% of image area
             large_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_contour_area]
 
             if not large_contours:
-                 print(f"Warning: No contours found larger than {min_contour_area} pixels. Using largest found or default.")
-                 # Fallback to largest overall contour if any exist, otherwise default
-                 if contours:
-                      largest_contour = max(contours, key=cv2.contourArea)
-                      contour_confidence = 'low (using largest small contour)'
-                 else: # Should not happen if contours existed, but safeguard
-                      return { 'diameter_cm': 15.0, 'estimated_volume_liters': 1.5, 'confidence': 'low (no contours detected)'}
+                print(f"Warning: No contours found larger than {min_contour_area:.0f} pixels. Using largest overall.")
+                # Fallback to largest contour if any exist
+                if contours:
+                    largest_contour = max(contours, key=cv2.contourArea)
+                    initial_confidence = 'low (using small contour)'
+                else: # Should not happen if contours existed
+                     return {'diameter_cm': 15.0, 'estimated_volume_liters': 1.5, 'confidence': 'low (no contours)'}
             else:
-                # Find the contour with the largest area among the reasonably large ones
-                largest_contour = max(large_contours, key=cv2.contourArea)
-                contour_confidence = 'medium (based on largest contour)'
+                 # Filter 2: Aspect Ratio (among large contours)
+                 reasonable_contours = []
+                 for cnt in large_contours:
+                     x, y, w, h = cv2.boundingRect(cnt)
+                     if w > 0 and h > 0:
+                         aspect_ratio = w / float(h)
+                         # Keep contours that aren't excessively skinny or wide (adjust range as needed)
+                         if 0.3 < aspect_ratio < 3.0:
+                             reasonable_contours.append(cnt)
 
-            # Get bounding box of the largest relevant contour
+                 if not reasonable_contours:
+                      print("Warning: No large contours with reasonable aspect ratio found. Using largest overall.")
+                      largest_contour = max(large_contours, key=cv2.contourArea) # Fallback to largest of the large ones
+                      initial_confidence = 'low (bad aspect ratio)'
+                 else:
+                      # Select the largest contour among the reasonably shaped ones
+                      largest_contour = max(reasonable_contours, key=cv2.contourArea)
+                      initial_confidence = 'medium (good contour found)'
+
+            # --- Dimension Estimation (Heuristic) ---
             x, y, w, h = cv2.boundingRect(largest_contour)
 
-            # --- Very Simple Scaling Estimation (HIGHLY UNRELIABLE without calibration) ---
-            # Assume pot width 'w' is the diameter. Needs a reference object or known distance.
-            # Let's make a wild guess based on image width. Assume a pot typically fills
-            # between 20% and 80% of the image width for this guess to be remotely useful.
-            image_width_pixels = image.shape[1]
-            pot_width_fraction = w / image_width_pixels
+            # Use max dimension of bounding box as characteristic size in pixels
+            dimension_pixels = max(w, h)
 
-            # Guess diameter based on fraction - this is purely heuristic
-            if pot_width_fraction < 0.15: # Pot seems very small in frame
-                 diameter_cm = 10.0
-                 estimation_confidence = 'very low (pot small in image)'
-            elif pot_width_fraction > 0.85: # Pot dominates frame
-                 diameter_cm = 35.0
-                 estimation_confidence = 'very low (pot large in image)'
-            else:
-                 # Simple linear interpolation guess between 10cm (at 15%) and 35cm (at 85%)
-                 diameter_cm = 10.0 + (pot_width_fraction - 0.15) / (0.85 - 0.15) * (35.0 - 10.0)
-                 estimation_confidence = 'low (heuristic guess)'
+            # Heuristic Scaling: Map fraction of max image dimension to cm range (e.g., 5cm to 45cm)
+            # This assumes the main part of the pot takes up this bounding box dimension.
+            pot_dimension_fraction = dimension_pixels / max_img_dim
+            diameter_cm = 5.0 + pot_dimension_fraction * 40.0 # Maps 0.0->5cm, 1.0->45cm
 
-            # Clamp diameter to a reasonable range (e.g., 5cm to 50cm)
-            diameter_cm = max(5.0, min(diameter_cm, 50.0))
+            # Clamp diameter to a reasonable range
+            min_diameter = 5.0
+            max_diameter = 50.0
+            clamped_diameter_cm = max(min_diameter, min(diameter_cm, max_diameter))
 
-            # Estimate volume assuming roughly cylindrical pot where height ≈ diameter
-            # V = pi * r^2 * h ≈ pi * (d/2)^2 * d = (pi/4) * d^3
+            final_confidence = initial_confidence
+            if clamped_diameter_cm != diameter_cm: # If clamping occurred, reduce confidence
+                print(f"Warning: Heuristic diameter {diameter_cm:.1f}cm was outside range [{min_diameter}-{max_diameter}]cm, clamped.")
+                final_confidence = 'low (heuristic out of range)'
+            diameter_cm = clamped_diameter_cm
+
+            # Estimate volume: Assume height ~= diameter (still a big assumption)
             radius_cm = diameter_cm / 2
-            height_cm = diameter_cm # Simplistic assumption
-            volume_cubic_cm = np.pi * (radius_cm ** 2) * height_cm
-            volume_liters = volume_cubic_cm / 1000.0
+            # Alternative: Estimate height from 'h' using the same flawed scaling?
+            # scaled_h_cm = 5.0 + (h / max_img_dim) * 40.0
+            # height_cm = max(5.0, min(scaled_h_cm, 50.0)) # Clamp height too
+            height_cm = diameter_cm # Keep simple assumption for now
+            volume_liters = (np.pi * (radius_cm ** 2) * height_cm) / 1000.0
 
-            # Clamp volume to reasonable range (e.g., 0.2L to 50L)
-            volume_liters = max(0.2, min(volume_liters, 50.0))
+            # Clamp volume
+            min_volume = 0.1
+            max_volume = 75.0 # Increased max slightly
+            clamped_volume_liters = max(min_volume, min(volume_liters, max_volume))
+            if clamped_volume_liters != volume_liters and final_confidence != 'low (heuristic out of range)':
+                 print(f"Warning: Calculated volume {volume_liters:.2f}L was outside range [{min_volume}-{max_volume}]L, clamped.")
+                 # Only downgrade confidence if it wasn't already low due to diameter clamping
+                 if 'medium' in final_confidence: final_confidence = 'low (volume out of range)'
+            volume_liters = clamped_volume_liters
 
-            print(f"Pot Size Estimation: Diameter={diameter_cm:.1f}cm, Volume={volume_liters:.2f}L, Confidence='{estimation_confidence}'")
 
-            return {
+            result = {
                 'diameter_cm': round(diameter_cm, 1),
                 'estimated_volume_liters': round(volume_liters, 2),
-                'confidence': estimation_confidence # Be explicit about low confidence
+                'confidence': final_confidence
             }
+            print(f"Pot Size Estimation Result: {result}")
+            return result
+
         except cv2.error as e:
             print(f"OpenCV Error during pot size estimation: {e}")
             print(traceback.format_exc())
@@ -252,11 +271,9 @@ class SmartPlantWateringSystem:
         except Exception as e:
             print(f"Unexpected error during pot size estimation: {e}")
             print(traceback.format_exc())
-            # Return default values on unexpected error but indicate failure
             return {
-                'diameter_cm': 15.0,
-                'estimated_volume_liters': 1.5,
-                'confidence': f'error during estimation ({e})'
+                'diameter_cm': 15.0, 'estimated_volume_liters': 1.5,
+                'confidence': f'error ({e})'
             }
 
 

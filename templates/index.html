@@ -8,6 +8,7 @@
       rel="stylesheet"
       href="{{ url_for('static', filename='style.css') }}"
     />
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   </head>
   <body>
     <div class="container">
@@ -85,39 +86,120 @@
         </div>
         <div class="error" id="error"></div>
         <div class="results profile-card" id="results">
+          <div class="export-options" id="exportOptions" style="display: none">
+            <h4>Export Info:</h4>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline"
+              onclick="exportTXT()"
+            >
+              Save as TXT
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline"
+              onclick="exportJSON()"
+            >
+              Save as JSON
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline"
+              onclick="showQRCode()"
+            >
+              Show QR Code
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline"
+              onclick="prepareStakeSVG()"
+            >
+              Prepare 3D Stake SVG
+            </button>
+          </div>
           <div class="profile-card-content">
-            
             <div class="profile-section">
               <h3><i class="icon icon-plant"></i>Plant Information</h3>
-              <p><strong>Name:</strong> <span id="resultPlantName">N/A</span></p>
-              <p><strong>Scientific Name:</strong> <span id="resultScientificName">N/A</span></p>
-              <p><strong>Family:</strong> <span id="resultPlantFamily">N/A</span></p>
-              <p><strong>ID Confidence:</strong> <span id="resultConfidence">N/A</span>%</p>
+              <p>
+                <strong>Name:</strong> <span id="resultPlantName">N/A</span>
+              </p>
+              <p>
+                <strong>Scientific Name:</strong>
+                <span id="resultScientificName">N/A</span>
+              </p>
+              <p>
+                <strong>Family:</strong> <span id="resultPlantFamily">N/A</span>
+              </p>
+              <p>
+                <strong>ID Confidence:</strong>
+                <span id="resultConfidence">N/A</span>%
+              </p>
             </div>
-  
+
             <div class="profile-section">
               <h3><i class="icon icon-pot"></i>Pot Information</h3>
-              <p><strong>Est. Diameter:</strong> <span id="resultPotDiameter">N/A</span> cm</p>
-              <p><strong>Est. Volume:</strong> <span id="resultPotVolume">N/A</span> L</p>
-              <p><strong>Est. Confidence:</strong> <span id="resultPotConfidence">N/A</span></p>
+              <p>
+                <strong>Est. Diameter:</strong>
+                <span id="resultPotDiameter">N/A</span> cm
+              </p>
+              <p>
+                <strong>Est. Volume:</strong>
+                <span id="resultPotVolume">N/A</span> L
+              </p>
+              <p>
+                <strong>Est. Confidence:</strong>
+                <span id="resultPotConfidence">N/A</span>
+              </p>
             </div>
-            
-          </div> <div class="profile-card-footer watering-schedule">
+          </div>
+          <div class="profile-card-footer watering-schedule">
             <h3><i class="icon icon-water"></i>Watering Schedule</h3>
             <p id="resultWateringScheduleSummary">N/A</p>
             <div class="schedule-details">
-                <p><strong>Amount:</strong> <span id="resultWaterAmount">N/A</span> ml</p>
-                <p><strong>Frequency:</strong> Every <span id="resultFrequency">N/A</span> days</p>
-                <p><strong>Moisture Need:</strong> <span id="resultMoistureLevel">N/A</span></p>
+              <p>
+                <strong>Amount:</strong>
+                <span id="resultWaterAmount">N/A</span> ml
+              </p>
+              <p>
+                <strong>Frequency:</strong> Every
+                <span id="resultFrequency">N/A</span> days
+              </p>
+              <p>
+                <strong>Moisture Need:</strong>
+                <span id="resultMoistureLevel">N/A</span>
+              </p>
             </div>
           </div>
         </div>
+      </div>
+      <div id="qrCodeModal" class="modal-overlay" style="display: none">
+        <div class="modal-content">
+          <button class="modal-close" onclick="closeModal('qrCodeModal')">
+            &times;
+          </button>
+          <h3>Plant Care QR Code</h3>
+          <div id="qrCodeContainer"></div>
+          <p
+            id="qrCodeDataDisplay"
+            style="font-size: 0.8em; word-break: break-all; margin-top: 10px"
+          ></p>
+          <button
+            type="button"
+            class="btn btn-primary"
+            onclick="downloadQRCode()"
+          >
+            Download QR Code (PNG)
+          </button>
         </div>
       </div>
     </div>
     <script>
+      // --- Global variable to store current results data ---
+      let currentResultsData = null;
+
       // --- Tab Switching Logic ---
       function switchTab(tabId) {
+        // Deactivate all calculator tabs and content
         document
           .querySelectorAll(".tabs .tab")
           .forEach((tab) => tab.classList.remove("active"));
@@ -125,18 +207,23 @@
           .querySelectorAll(".calculator-section .tab-content")
           .forEach((content) => content.classList.remove("active"));
 
-        document
-          .querySelector(`.tabs [onclick="switchTab('${tabId}')"]`)
-          .classList.add("active");
-        document.getElementById(`${tabId}Tab`).classList.add("active");
+        // Activate the selected calculator tab and content
+        const activeTabButton = document.querySelector(
+          `.tabs [onclick="switchTab('${tabId}')"]`
+        );
+        const activeTabContent = document.getElementById(`${tabId}Tab`);
+        if (activeTabButton) activeTabButton.classList.add("active");
+        if (activeTabContent) activeTabContent.classList.add("active");
 
+        // Clear previous results, feedback, and previews when switching tabs
         clearFeedbackAndResults();
-        document.getElementById("imagePreview").innerHTML = "";
+        const preview = document.getElementById("imagePreview");
+        if (preview) preview.innerHTML = ""; // Clear preview
         const fileInput = document.getElementById("fileInput");
-        if (fileInput) fileInput.value = null;
+        if (fileInput) fileInput.value = null; // Reset file input
         const manualName = document.getElementById("manualPlantNameInput");
         const manualVol = document.getElementById("manualPotVolumeInput");
-        if (manualName) manualName.value = "";
+        if (manualName) manualName.value = ""; // Clear manual inputs
         if (manualVol) manualVol.value = "";
       }
 
@@ -145,6 +232,7 @@
         const resultsDiv = document.getElementById("results");
         const errorDiv = document.getElementById("error");
         const loadingDiv = document.getElementById("loading");
+        const exportOpts = document.getElementById("exportOptions");
 
         if (resultsDiv) resultsDiv.style.display = "none";
         if (errorDiv) {
@@ -152,8 +240,12 @@
           errorDiv.textContent = "";
         }
         if (loadingDiv) loadingDiv.style.display = "none";
+        if (exportOpts) exportOpts.style.display = "none"; // Hide export options
 
-        // Reset result fields to 'N/A'
+        currentResultsData = null; // Clear stored data
+        closeModal("qrCodeModal"); // Close QR modal if open
+
+        // Reset result fields to 'N/A' for clarity
         const idsToReset = [
           "resultPlantName",
           "resultScientificName",
@@ -175,24 +267,24 @@
 
       // --- Show Loading Indicator ---
       function showLoading(message = "Processing...") {
-        clearFeedbackAndResults();
+        clearFeedbackAndResults(); // Clear previous state first
         const loadingDiv = document.getElementById("loading");
         if (loadingDiv) {
-          loadingDiv.querySelector("p").textContent = message;
+          loadingDiv.querySelector("p").textContent = message; // Set specific message
           loadingDiv.style.display = "block";
         }
       }
 
       // --- Show Error Message ---
       function showError(message) {
-        clearFeedbackAndResults();
+        clearFeedbackAndResults(); // Clear previous state first
         const errorDiv = document.getElementById("error");
         if (errorDiv) {
           errorDiv.textContent = message;
           errorDiv.style.display = "block";
         }
         const loadingDiv = document.getElementById("loading");
-        if (loadingDiv) loadingDiv.style.display = "none";
+        if (loadingDiv) loadingDiv.style.display = "none"; // Ensure loading is hidden
       }
 
       // --- Event Listener for File Input ---
@@ -201,16 +293,21 @@
         fileInputElement.addEventListener("change", function (e) {
           const file = e.target.files[0];
           if (file) {
+            // 1. Show image preview
             const reader = new FileReader();
             reader.onload = function (event) {
               const preview = document.getElementById("imagePreview");
               if (preview) {
+                // Constrain preview size
                 preview.innerHTML = `<img src="${event.target.result}" alt="Plant preview" style="max-width: 100%; max-height: 350px; border-radius: 5px; margin-top: 10px;">`;
               }
             };
             reader.readAsDataURL(file);
+
+            // 2. Automatically trigger upload
             uploadFile(file);
           } else {
+            // Clear preview if no file is selected (e.g., user cancels)
             const preview = document.getElementById("imagePreview");
             if (preview) preview.innerHTML = "";
           }
@@ -220,24 +317,33 @@
       // --- File Upload Function ---
       function uploadFile(file) {
         const formData = new FormData();
-        formData.append("file", file);
+        formData.append("file", file); // Use 'file' as expected by the backend /upload route
+
         showLoading("Analyzing your plant... 🔍");
 
-        fetch("/upload", { method: "POST", body: formData })
+        fetch("/upload", {
+          // Endpoint for the full combined process
+          method: "POST",
+          body: formData,
+        })
           .then(async (response) => {
-            const data = await response.json();
-            if (!response.ok)
+            // Make async to easily read JSON body on error
+            const data = await response.json(); // Try to parse JSON regardless of status
+            if (!response.ok) {
+              // Use error message from API response if available, otherwise generic
               throw new Error(data.error || `Server error: ${response.status}`);
-            return data;
+            }
+            return data; // Pass parsed data on success
           })
           .then((data) => {
             const loadingDiv = document.getElementById("loading");
             if (loadingDiv) loadingDiv.style.display = "none";
-            showResults(data);
+            showResults(data); // Display results on success
           })
           .catch((error) => {
             console.error("Upload Error:", error);
             showError(`Processing failed: ${error.message}`);
+            // No need to hide loading here, showError does it
           });
       }
 
@@ -245,9 +351,10 @@
       function calculateManual() {
         const plantNameInput = document.getElementById("manualPlantNameInput");
         const potVolumeInput = document.getElementById("manualPotVolumeInput");
-        const plantName = plantNameInput.value.trim();
+        const plantName = plantNameInput.value.trim(); // Trim whitespace
         const potVolume = potVolumeInput.value;
 
+        // Use HTML5 validation reporting first
         if (!plantNameInput.checkValidity()) {
           plantNameInput.reportValidity();
           return;
@@ -255,11 +362,11 @@
         if (!potVolumeInput.checkValidity() || parseFloat(potVolume) <= 0) {
           potVolumeInput.setCustomValidity(
             "Please enter a positive number for volume."
-          );
+          ); // Custom message
           potVolumeInput.reportValidity();
           return;
         }
-        potVolumeInput.setCustomValidity("");
+        potVolumeInput.setCustomValidity(""); // Clear custom validity if okay
 
         showLoading("Calculating schedule... 💧");
 
@@ -268,19 +375,20 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             plant_name: plantName,
-            pot_volume: parseFloat(potVolume),
+            pot_volume: parseFloat(potVolume), // Send as number
           }),
         })
           .then(async (response) => {
             const data = await response.json();
-            if (!response.ok)
+            if (!response.ok) {
               throw new Error(data.error || `Server error: ${response.status}`);
+            }
             return data;
           })
           .then((data) => {
             const loadingDiv = document.getElementById("loading");
             if (loadingDiv) loadingDiv.style.display = "none";
-            showResults(data);
+            showResults(data); // Display results on success
           })
           .catch((error) => {
             console.error("Manual Calculation Error:", error);
@@ -288,7 +396,7 @@
           });
       }
 
-      // --- Display Results Function (with Logging) ---
+      // --- Display Results Function (with Logging and Safer Updates) ---
       function showResults(data) {
         // Log the received data structure to the console for debugging
         console.log(
@@ -296,7 +404,10 @@
           JSON.stringify(data, null, 2)
         );
 
-        clearFeedbackAndResults(); // Clear N/A values before populating
+        clearFeedbackAndResults(); // Clear N/A values and hide old state
+
+        // *** Store the data globally ***
+        currentResultsData = data;
 
         const plantInfo = data.plant_info || {};
         const potInfo = data.pot_info || {};
@@ -349,13 +460,324 @@
 
         // Show the results block
         const resultsDiv = document.getElementById("results");
-        if (resultsDiv) resultsDiv.style.display = "block";
+        if (resultsDiv) resultsDiv.style.display = "block"; // Or "grid", "flex" depending on final CSS
+
+        // *** Show the export options ***
+        const exportOpts = document.getElementById("exportOptions");
+        if (exportOpts) exportOpts.style.display = "block";
+      }
+
+      // --- Download Helper Function ---
+      function downloadFile(filename, content, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a); // Required for Firefox
+        a.click();
+        // Use setTimeout to ensure download starts before revoking object URL
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url); // Clean up
+        }, 100);
+      }
+
+      // --- Export Functions ---
+      function exportTXT() {
+        if (!currentResultsData) {
+          alert("No data to export.");
+          return;
+        }
+        let textContent =
+          "Plant Watering Information\n===========================\n\n";
+        const formatKey = (key) =>
+          key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()); // Format key nicely
+
+        if (currentResultsData.plant_info) {
+          textContent += "[Plant Info]\n";
+          for (const [key, value] of Object.entries(
+            currentResultsData.plant_info
+          )) {
+            textContent += `${formatKey(key)}: ${value ?? "N/A"}\n`;
+          }
+          textContent += "\n";
+        }
+        if (currentResultsData.pot_info) {
+          textContent += "[Pot Info]\n";
+          for (const [key, value] of Object.entries(
+            currentResultsData.pot_info
+          )) {
+            textContent += `${formatKey(key)}: ${value ?? "N/A"}\n`;
+          }
+          textContent += "\n";
+        }
+        if (currentResultsData.watering_schedule) {
+          textContent += "[Watering Schedule]\n";
+          for (const [key, value] of Object.entries(
+            currentResultsData.watering_schedule
+          )) {
+            // Exclude summary if it exists, as it's redundant
+            if (
+              key !== "schedule_summary" ||
+              !currentResultsData.watering_schedule.schedule_summary
+            ) {
+              textContent += `${formatKey(key)}: ${value ?? "N/A"}\n`;
+            }
+          }
+          // Add summary separately if it exists
+          if (currentResultsData.watering_schedule.schedule_summary) {
+            textContent += `\nSummary: ${currentResultsData.watering_schedule.schedule_summary}\n`;
+          }
+          textContent += "\n";
+        }
+        const filename = `${
+          currentResultsData.plant_info?.common_name?.replace(/ /g, "_") ||
+          "plant"
+        }_schedule.txt`;
+        downloadFile(filename, textContent, "text/plain;charset=utf-8");
+      }
+
+      function exportJSON() {
+        if (!currentResultsData) {
+          alert("No data to export.");
+          return;
+        }
+        const jsonContent = JSON.stringify(currentResultsData, null, 2); // Pretty print
+        const filename = `${
+          currentResultsData.plant_info?.common_name?.replace(/ /g, "_") ||
+          "plant"
+        }_schedule.json`;
+        downloadFile(filename, jsonContent, "application/json;charset=utf-8");
+      }
+
+      // --- QR Code Functions ---
+      let qrCodeInstance = null; // To hold the qrcode.js instance
+
+      function getQRCodeDataString() {
+        if (!currentResultsData || !currentResultsData.watering_schedule)
+          return null;
+        const name = currentResultsData.plant_info?.common_name || "Plant";
+        const amount =
+          currentResultsData.watering_schedule.water_amount_ml || "N/A";
+        const freq =
+          currentResultsData.watering_schedule.frequency_days || "N/A";
+        // Keep data concise for QR code reliability
+        // Consider adding moisture level if space permits: \nNeed: ${schedule.moisture_level_required || 'N/A'}
+        return `Plant: ${name}\nWater: ${amount}ml\nEvery: ${freq} days`;
+      }
+
+      function showQRCode() {
+        if (!currentResultsData) {
+          alert("No data available for QR code.");
+          return;
+        }
+        const qrContainer = document.getElementById("qrCodeContainer");
+        const qrDataDisplay = document.getElementById("qrCodeDataDisplay");
+        const modal = document.getElementById("qrCodeModal");
+        if (!qrContainer || !modal || !qrDataDisplay) {
+          console.error("QR Code container or modal not found");
+          return;
+        }
+
+        qrContainer.innerHTML = ""; // Clear previous QR code
+        const dataString = getQRCodeDataString();
+        if (!dataString) {
+          alert("Could not generate QR code data.");
+          return;
+        }
+
+        qrDataDisplay.textContent = `Data: ${dataString.replace("\n", " | ")}`; // Show what's encoded compactly
+
+        try {
+          // Ensure QRCode is available (check if library loaded)
+          if (typeof QRCode === "undefined") {
+            throw new Error("QRCode library is not loaded.");
+          }
+          qrCodeInstance = new QRCode(qrContainer, {
+            text: dataString,
+            width: 200, // Adjust size as needed
+            height: 200,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.H, // High correction level
+          });
+        } catch (e) {
+          console.error("Error generating QR code:", e);
+          showError("Could not generate QR code. " + e.message);
+          return;
+        }
+
+        modal.style.display = "flex"; // Show the modal
+      }
+
+      function downloadQRCode() {
+        const qrContainer = document.getElementById("qrCodeContainer");
+        if (!qrContainer) return;
+        // qrcode.js usually generates a canvas, but check for img fallback
+        const canvasElement = qrContainer.querySelector("canvas");
+        const imgElement = qrContainer.querySelector("img");
+
+        let dataURL = null;
+        if (canvasElement) {
+          dataURL = canvasElement.toDataURL("image/png");
+        } else if (imgElement && imgElement.src) {
+          dataURL = imgElement.src; // Assumes src is a data URL or accessible
+        }
+
+        if (dataURL) {
+          const filename = `${
+            currentResultsData?.plant_info?.common_name?.replace(/ /g, "_") ||
+            "plant"
+          }_qr.png`;
+          const a = document.createElement("a");
+          a.href = dataURL;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } else {
+          console.error("Could not find QR code image or canvas to download.");
+          alert("Could not find QR code image data.");
+        }
+      }
+
+      function closeModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) modal.style.display = "none";
+        // Clear QR code when closing modal to prevent showing old one briefly
+        const qrContainer = document.getElementById("qrCodeContainer");
+        if (modalId === "qrCodeModal" && qrContainer) {
+          qrContainer.innerHTML = "";
+          qrCodeInstance = null; // Reset instance if needed
+        }
+      }
+      // Close modal if clicking outside the content
+      window.addEventListener("click", function (event) {
+        const modal = document.getElementById("qrCodeModal");
+        if (modal && event.target == modal) {
+          // Check if click target is the overlay itself
+          closeModal("qrCodeModal");
+        }
+      });
+
+      // --- 3D Stake SVG Preparation ---
+      function prepareStakeSVG() {
+        if (!currentResultsData) {
+          alert("No data to generate stake SVG.");
+          return;
+        }
+
+        const qrData = getQRCodeDataString();
+        if (!qrData || qrData === "No data") {
+          alert("No watering data available to generate stake SVG.");
+          return;
+        }
+
+        // Create a temporary div to generate QR code canvas
+        const tempQrDiv = document.createElement("div");
+        tempQrDiv.style.position = "absolute"; // Keep it off-screen
+        tempQrDiv.style.left = "-9999px";
+        document.body.appendChild(tempQrDiv); // Add to DOM temporarily
+
+        let qrImageDataURL = null;
+        try {
+          if (typeof QRCode === "undefined")
+            throw new Error("QRCode library not loaded.");
+          // Generate QR code to the temporary div
+          new QRCode(tempQrDiv, {
+            text: qrData,
+            width: 180, // Pixels for QR code generation
+            height: 180,
+            correctLevel: QRCode.CorrectLevel.H,
+          });
+          const canvas = tempQrDiv.querySelector("canvas");
+          if (!canvas)
+            throw new Error("Canvas not generated by QRCode library.");
+          // Get QR as PNG data URL to embed in SVG
+          qrImageDataURL = canvas.toDataURL("image/png");
+        } catch (e) {
+          console.error("Error preparing SVG stake (QR gen failed):", e);
+          alert("Failed to prepare SVG for 3D printing stake: " + e.message);
+          document.body.removeChild(tempQrDiv); // Clean up temp div
+          return; // Stop if QR generation failed
+        } finally {
+          // Clean up the temporary div regardless of success/failure after getting dataURL
+          if (document.body.contains(tempQrDiv)) {
+            document.body.removeChild(tempQrDiv);
+          }
+        }
+
+        // Proceed only if we got the image data
+        if (!qrImageDataURL) {
+          alert("Failed to get QR code image data for SVG.");
+          return;
+        }
+
+        // --- Define SVG dimensions and elements (in mm for 3D printing) ---
+        const squareSize = 50.8; // 2 inches in mm
+        const qrSize = 46; // Size of QR code within the square in mm (leaves ~2.4mm quiet zone)
+        const qrOffset = (squareSize - qrSize) / 2; // Center QR code
+        const stakeBaseWidth = 20;
+        const stakeHeight = 35; // Stake length
+        const stakeTipY = squareSize + stakeHeight;
+        const stakeBaseY = squareSize;
+        const stakeBaseLeftX = (squareSize - stakeBaseWidth) / 2;
+        const stakeBaseRightX = stakeBaseLeftX + stakeBaseWidth;
+        const stakeTipX = squareSize / 2;
+
+        // Create SVG content string
+        // Using image-rendering: pixelated helps keep QR sharp if scaled
+        const svgContent = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+    width="${squareSize}mm"
+    height="${stakeTipY}mm"
+    viewBox="0 0 ${squareSize} ${stakeTipY}"
+    version="1.1"
+    xmlns="http://www.w3.org/2000/svg"
+    xmlns:svg="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="clipSquare">
+        <rect x="0" y="0" width="${squareSize}" height="${squareSize}" />
+    </clipPath>
+  </defs>
+  <g id="layer1">
+    <rect
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.5;stroke-linejoin:round"
+       id="qr_base_square"
+       width="${squareSize}"
+       height="${squareSize}"
+       x="0"
+       y="0" />
+    <image
+       href="${qrImageDataURL}"
+       x="${qrOffset}"
+       y="${qrOffset}"
+       width="${qrSize}"
+       height="${qrSize}"
+       id="qr_code_image"
+       style="image-rendering:pixelated;"
+       clip-path="url(#clipSquare)" />
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.5;stroke-linejoin:round"
+       d="M ${stakeBaseLeftX},${stakeBaseY} L ${stakeBaseRightX},${stakeBaseY} L ${stakeTipX},${stakeTipY} z"
+       id="stake_polygon" />
+  </g>
+</svg>`;
+
+        // Trigger SVG download
+        const filename = `${
+          currentResultsData.plant_info?.common_name?.replace(/ /g, "_") ||
+          "plant"
+        }_stake.svg`;
+        downloadFile(filename, svgContent, "image/svg+xml;charset=utf-8");
       }
 
       // --- Initialize ---
+      // Ensure the photo tab is active and results/feedback are hidden on page load
       document.addEventListener("DOMContentLoaded", () => {
-        switchTab("photo");
-        clearFeedbackAndResults();
+        switchTab("photo"); // Set initial tab
+        clearFeedbackAndResults(); // Hide results/feedback initially
       });
     </script>
   </body>
