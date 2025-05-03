@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Test Watering Schedule Calculation</title>
+    <title>Watering Schedule Calculator</title>
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='style.css') }}"
@@ -12,8 +12,8 @@
   <body>
     <div class="container">
       <h1>
-        <a href="/" style="text-decoration: none; color: inherit">🌱</a> Test
-        Watering Schedule Calculation
+        <a href="/" style="text-decoration: none; color: inherit">🌱</a>
+        Watering Schedule Calculator
       </h1>
       <p>
         Provide plant and pot information manually to calculate the watering
@@ -47,7 +47,7 @@
               list="family-list"
               id="plantFamily"
               class="form-control"
-              placeholder="e.g., Araceae"
+              placeholder="e.g., Araceae or default"
               required
             />
             <datalist id="family-list">
@@ -56,8 +56,8 @@
             </datalist>
 
             <small class="form-text text-muted"
-              >Select or type a family. Determines moisture needs. 'default'
-              uses medium.</small
+              >Select or type a family. Determines moisture needs ('default'
+              uses medium).</small
             >
           </div>
         </fieldset>
@@ -100,9 +100,46 @@
 
       <div class="error" id="error"></div>
 
-      <div class="results" id="results">
-        <h2>Calculated Schedule:</h2>
-        <pre><code id="resultData" style="white-space: pre-wrap; word-wrap: break-word;"></code></pre>
+      <div
+        class="results"
+        id="results"
+        style="
+          padding: 0;
+          background: none;
+          border: none;
+          box-shadow: none;
+          display: none;
+        "
+      >
+        <div class="profile-card" style="margin-top: 20px">
+          <div
+            class="profile-card-footer watering-schedule"
+            style="border-top: none; background-color: #e9f7ef"
+          >
+            <h3>Calculated Schedule</h3>
+            <p id="resultSummary">N/A</p>
+            <div class="schedule-details">
+              <p>
+                <strong>Amount:</strong> <span id="resultAmount">N/A</span> ml
+              </p>
+              <p>
+                <strong>Frequency:</strong> Every
+                <span id="resultFrequency">N/A</span> days
+              </p>
+              <p>
+                <strong>Moisture Need:</strong>
+                <span id="resultMoisture">N/A</span>
+              </p>
+            </div>
+          </div>
+          <div
+            class="profile-card-footer"
+            style="background-color: #f8f9fa; text-align: left"
+          >
+            <h4>Raw JSON Data:</h4>
+            <pre><code id="resultDataRaw" style="white-space: pre-wrap; word-wrap: break-word;"></code></pre>
+          </div>
+        </div>
       </div>
       <div class="back-link">
         <a href="/">← Back to Main Calculator</a>
@@ -111,18 +148,24 @@
 
     <script>
       const form = document.getElementById("scheduleForm");
+      // --- Input elements ---
       const plantCommonNameInput = document.getElementById("plantCommonName");
       const plantScientificNameInput = document.getElementById(
         "plantScientificName"
       );
       const plantFamilyInput = document.getElementById("plantFamily");
       const potVolumeInput = document.getElementById("potVolume");
-      const potDiameterInput = document.getElementById("potDiameter"); // Optional field
-
+      const potDiameterInput = document.getElementById("potDiameter");
+      // --- Feedback elements ---
       const loadingDiv = document.getElementById("loading");
       const errorDiv = document.getElementById("error");
       const resultsDiv = document.getElementById("results");
-      const resultData = document.getElementById("resultData");
+      // --- Result span elements ---
+      const resultSummary = document.getElementById("resultSummary");
+      const resultAmount = document.getElementById("resultAmount");
+      const resultFrequency = document.getElementById("resultFrequency");
+      const resultMoisture = document.getElementById("resultMoisture");
+      const resultDataRaw = document.getElementById("resultDataRaw");
 
       form.addEventListener("submit", async function (e) {
         e.preventDefault();
@@ -131,12 +174,11 @@
 
         // Construct the JSON payload
         const plantInfo = {
-          common_name: plantCommonNameInput.value || "N/A",
-          scientific_name: plantScientificNameInput.value || "N/A",
+          common_name: plantCommonNameInput.value || null, // Use null if empty
+          scientific_name: plantScientificNameInput.value || null,
           family: plantFamilyInput.value || "default", // Default if empty
           confidence: 1.0, // Assume user input is confident
         };
-
         const potInfo = {
           estimated_volume_liters: parseFloat(potVolumeInput.value),
           diameter_cm: potDiameterInput.value
@@ -145,12 +187,7 @@
           confidence: "user_provided",
         };
 
-        // Basic validation
-        if (!plantInfo.family) {
-          showError("Plant Family is required.");
-          loadingDiv.style.display = "none";
-          return;
-        }
+        // Basic validation already handled by form 'required', but double check volume
         if (
           isNaN(potInfo.estimated_volume_liters) ||
           potInfo.estimated_volume_liters <= 0
@@ -159,33 +196,47 @@
           loadingDiv.style.display = "none";
           return;
         }
+        if (!plantInfo.family) {
+          showError("Plant Family is required.");
+          loadingDiv.style.display = "none";
+          return;
+        }
 
-        const payload = {
-          plant_info: plantInfo,
-          pot_info: potInfo,
-        };
+        const payload = { plant_info: plantInfo, pot_info: potInfo };
 
         try {
-          // Use the dedicated test endpoint
           const response = await fetch("/test/calculate-schedule", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
           });
-
           const data = await response.json();
+          console.log("Received data:", data);
 
-          if (!response.ok) {
+          if (!response.ok)
             throw new Error(
               data.error || `HTTP error! status: ${response.status}`
             );
-          }
 
-          // Display the raw JSON result
-          resultData.textContent = JSON.stringify(data, null, 2);
-          resultsDiv.style.display = "block";
+          // ** Populate formatted results **
+          const setText = (element, text) => {
+            if (element) element.textContent = text ?? "N/A";
+          };
+
+          setText(
+            resultSummary,
+            data.schedule_summary ||
+              `Water ${data.water_amount_ml ?? "N/A"}ml every ${
+                data.frequency_days ?? "N/A"
+              } days.`
+          );
+          setText(resultAmount, data.water_amount_ml);
+          setText(resultFrequency, data.frequency_days);
+          setText(resultMoisture, data.moisture_level_required); // Use the specific key from API if available
+          if (resultDataRaw)
+            resultDataRaw.textContent = JSON.stringify(data, null, 2);
+
+          resultsDiv.style.display = "block"; // Show results
         } catch (error) {
           console.error("Calculation Error:", error);
           showError(`Calculation failed: ${error.message}`);
@@ -197,14 +248,21 @@
       function clearFeedback() {
         errorDiv.style.display = "none";
         errorDiv.textContent = "";
-        resultsDiv.style.display = "none";
-        resultData.textContent = "";
+        resultsDiv.style.display = "none"; // Hide results
+        // Clear previous result values
+        const setText = (element, text) => {
+          if (element) element.textContent = text;
+        };
+        setText(resultSummary, "N/A");
+        setText(resultAmount, "N/A");
+        setText(resultFrequency, "N/A");
+        setText(resultMoisture, "N/A");
+        if (resultDataRaw) resultDataRaw.textContent = "";
       }
-
       function showError(message) {
         errorDiv.textContent = message;
         errorDiv.style.display = "block";
-        resultsDiv.style.display = "none";
+        resultsDiv.style.display = "none"; // Hide results on error
       }
     </script>
   </body>

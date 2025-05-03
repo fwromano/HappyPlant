@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Test Pot Size Estimation</title>
+    <title>Pot Size Estimation Tool</title>
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='style.css') }}"
@@ -12,8 +12,8 @@
   <body>
     <div class="container">
       <h1>
-        <a href="/" style="text-decoration: none; color: inherit">🌱</a> Test
-        Pot Size Estimation
+        <a href="/" style="text-decoration: none; color: inherit">🌱</a> Pot
+        Size Estimation
       </h1>
       <p>Upload an image of a plant pot to estimate its size using OpenCV.</p>
       <p class="warning">
@@ -44,9 +44,43 @@
 
       <div class="error" id="error"></div>
 
-      <div class="results" id="results">
-        <h2>Estimation Result:</h2>
-        <pre><code id="resultData" style="white-space: pre-wrap; word-wrap: break-word;"></code></pre>
+      <div
+        class="results"
+        id="results"
+        style="
+          padding: 0;
+          background: none;
+          border: none;
+          box-shadow: none;
+          display: none;
+        "
+      >
+        <div class="profile-card" style="margin-top: 20px">
+          <div class="profile-card-content">
+            <div class="profile-section">
+              <h3>Estimation Result</h3>
+              <p>
+                <strong>Estimated Diameter:</strong>
+                <span id="resultDiameter">N/A</span> cm
+              </p>
+              <p>
+                <strong>Estimated Volume:</strong>
+                <span id="resultVolume">N/A</span> L
+              </p>
+              <p>
+                <strong>Confidence:</strong>
+                <span id="resultConfidence">N/A</span>
+              </p>
+            </div>
+          </div>
+          <div
+            class="profile-card-footer"
+            style="background-color: #f8f9fa; text-align: left"
+          >
+            <h4>Raw JSON Data:</h4>
+            <pre><code id="resultDataRaw" style="white-space: pre-wrap; word-wrap: break-word;"></code></pre>
+          </div>
+        </div>
       </div>
       <div class="back-link">
         <a href="/">← Back to Main Calculator</a>
@@ -60,7 +94,11 @@
       const loadingDiv = document.getElementById("loading");
       const errorDiv = document.getElementById("error");
       const resultsDiv = document.getElementById("results");
-      const resultData = document.getElementById("resultData");
+      // Get specific span elements
+      const resultDiameter = document.getElementById("resultDiameter");
+      const resultVolume = document.getElementById("resultVolume");
+      const resultConfidence = document.getElementById("resultConfidence");
+      const resultDataRaw = document.getElementById("resultDataRaw");
 
       imageInput.addEventListener("change", function (e) {
         const file = e.target.files[0];
@@ -79,36 +117,48 @@
       form.addEventListener("submit", async function (e) {
         e.preventDefault();
         clearFeedback();
-
         const file = imageInput.files[0];
         if (!file) {
           showError("Please select an image file.");
           return;
         }
-
         loadingDiv.style.display = "block";
-
         const formData = new FormData();
         formData.append("image", file);
 
         try {
-          // Use the dedicated test endpoint
           const response = await fetch("/test/estimate-pot-size", {
             method: "POST",
             body: formData,
           });
-
           const data = await response.json();
+          console.log("Received data:", data);
 
-          if (!response.ok) {
+          if (!response.ok)
             throw new Error(
               data.error || `HTTP error! status: ${response.status}`
             );
-          }
 
-          // Display the raw JSON result
-          resultData.textContent = JSON.stringify(data, null, 2);
-          resultsDiv.style.display = "block";
+          // ** Populate formatted results **
+          const setText = (element, text) => {
+            if (element) element.textContent = text ?? "N/A";
+          };
+
+          const diameter = data.diameter_cm;
+          const volume = data.estimated_volume_liters;
+          setText(
+            resultDiameter,
+            typeof diameter === "number" ? diameter.toFixed(1) : "N/A"
+          );
+          setText(
+            resultVolume,
+            typeof volume === "number" ? volume.toFixed(2) : "N/A"
+          );
+          setText(resultConfidence, data.confidence);
+          if (resultDataRaw)
+            resultDataRaw.textContent = JSON.stringify(data, null, 2);
+
+          resultsDiv.style.display = "block"; // Show results
         } catch (error) {
           console.error("Estimation Error:", error);
           showError(`Estimation failed: ${error.message}`);
@@ -120,14 +170,20 @@
       function clearFeedback() {
         errorDiv.style.display = "none";
         errorDiv.textContent = "";
-        resultsDiv.style.display = "none";
-        resultData.textContent = "";
+        resultsDiv.style.display = "none"; // Hide results
+        // Clear previous result values
+        const setText = (element, text) => {
+          if (element) element.textContent = text;
+        };
+        setText(resultDiameter, "N/A");
+        setText(resultVolume, "N/A");
+        setText(resultConfidence, "N/A");
+        if (resultDataRaw) resultDataRaw.textContent = "";
       }
-
       function showError(message) {
         errorDiv.textContent = message;
         errorDiv.style.display = "block";
-        resultsDiv.style.display = "none";
+        resultsDiv.style.display = "none"; // Hide results on error
       }
     </script>
   </body>

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Test Plant Identification</title>
+    <title>Plant Identification Tool</title>
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='style.css') }}"
@@ -12,8 +12,8 @@
   <body>
     <div class="container">
       <h1>
-        <a href="/" style="text-decoration: none; color: inherit">🌱</a> Test
-        Plant Identification
+        <a href="/" style="text-decoration: none; color: inherit">🌱</a> Plant
+        Identification
       </h1>
       <p>Upload an image to identify the plant using the PlantNet API.</p>
 
@@ -69,11 +69,45 @@
 
       <div class="error" id="error"></div>
 
-      <div class="results" id="results">
-        <h2>Identification Result:</h2>
-        <pre><code id="resultData" style="white-space: pre-wrap; word-wrap: break-word;"></code></pre>
+      <div
+        class="results"
+        id="results"
+        style="
+          padding: 0;
+          background: none;
+          border: none;
+          box-shadow: none;
+          display: none;
+        "
+      >
+        <div class="profile-card" style="margin-top: 20px">
+          <div class="profile-card-content">
+            <div class="profile-section">
+              <h3>Identification Result</h3>
+              <p>
+                <strong>Common Name:</strong>
+                <span id="resultCommonName">N/A</span>
+              </p>
+              <p>
+                <strong>Scientific Name:</strong>
+                <span id="resultScientificName">N/A</span>
+              </p>
+              <p><strong>Family:</strong> <span id="resultFamily">N/A</span></p>
+              <p>
+                <strong>Confidence:</strong>
+                <span id="resultConfidence">N/A</span>%
+              </p>
+            </div>
+          </div>
+          <div
+            class="profile-card-footer"
+            style="background-color: #f8f9fa; text-align: left"
+          >
+            <h4>Raw JSON Data:</h4>
+            <pre><code id="resultDataRaw" style="white-space: pre-wrap; word-wrap: break-word;"></code></pre>
+          </div>
+        </div>
       </div>
-
       <div class="back-link">
         <a href="/">← Back to Main Calculator</a>
       </div>
@@ -86,7 +120,14 @@
       const loadingDiv = document.getElementById("loading");
       const errorDiv = document.getElementById("error");
       const resultsDiv = document.getElementById("results");
-      const resultData = document.getElementById("resultData");
+      // Get specific span elements
+      const resultCommonName = document.getElementById("resultCommonName");
+      const resultScientificName = document.getElementById(
+        "resultScientificName"
+      );
+      const resultFamily = document.getElementById("resultFamily");
+      const resultConfidence = document.getElementById("resultConfidence");
+      const resultDataRaw = document.getElementById("resultDataRaw");
 
       imageInput.addEventListener("change", function (e) {
         const file = e.target.files[0];
@@ -105,37 +146,46 @@
       form.addEventListener("submit", async function (e) {
         e.preventDefault();
         clearFeedback();
-
         const file = imageInput.files[0];
         if (!file) {
           showError("Please select an image file.");
           return;
         }
-
         loadingDiv.style.display = "block";
-
         const formData = new FormData();
         formData.append("image", file);
 
         try {
-          // Use the dedicated test endpoint
           const response = await fetch("/test/identify-plant", {
             method: "POST",
             body: formData,
           });
-
           const data = await response.json();
+          console.log("Received data:", data); // Log received data
 
-          if (!response.ok) {
-            // Show error message from API response if available
+          if (!response.ok)
             throw new Error(
               data.error || `HTTP error! status: ${response.status}`
             );
-          }
 
-          // Display the raw JSON result nicely formatted
-          resultData.textContent = JSON.stringify(data, null, 2);
-          resultsDiv.style.display = "block";
+          // ** Populate formatted results **
+          // Helper to safely set text
+          const setText = (element, text) => {
+            if (element) element.textContent = text ?? "N/A";
+          };
+
+          setText(resultCommonName, data.common_name);
+          setText(resultScientificName, data.scientific_name);
+          setText(resultFamily, data.family);
+          const confidence = data.confidence;
+          setText(
+            resultConfidence,
+            typeof confidence === "number" ? confidence.toFixed(1) : "N/A"
+          ); // API returns 0-100 or 0-1? Assuming 0-100 from context
+          if (resultDataRaw)
+            resultDataRaw.textContent = JSON.stringify(data, null, 2); // Show raw data too
+
+          resultsDiv.style.display = "block"; // Show results block
         } catch (error) {
           console.error("Identification Error:", error);
           showError(`Identification failed: ${error.message}`);
@@ -147,15 +197,21 @@
       function clearFeedback() {
         errorDiv.style.display = "none";
         errorDiv.textContent = "";
-        resultsDiv.style.display = "none";
-        resultData.textContent = "";
-        // Don't clear preview on clearFeedback, only on new selection or submission start
+        resultsDiv.style.display = "none"; // Hide results
+        // Clear previous result values
+        const setText = (element, text) => {
+          if (element) element.textContent = text;
+        };
+        setText(resultCommonName, "N/A");
+        setText(resultScientificName, "N/A");
+        setText(resultFamily, "N/A");
+        setText(resultConfidence, "N/A");
+        if (resultDataRaw) resultDataRaw.textContent = "";
       }
-
       function showError(message) {
         errorDiv.textContent = message;
         errorDiv.style.display = "block";
-        resultsDiv.style.display = "none"; // Hide results if error occurs
+        resultsDiv.style.display = "none"; // Hide results on error
       }
     </script>
   </body>

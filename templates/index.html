@@ -87,11 +87,12 @@
         <div class="error" id="error"></div>
         <div class="results profile-card" id="results">
           <div class="export-options" id="exportOptions" style="display: none">
-            <h4>Export Info:</h4>
+            <h4>Save / Export Data:</h4>
             <button
               type="button"
               class="btn btn-sm btn-outline"
               onclick="exportTXT()"
+              title="Save all details as a text file"
             >
               Save as TXT
             </button>
@@ -99,22 +100,34 @@
               type="button"
               class="btn btn-sm btn-outline"
               onclick="exportJSON()"
+              title="Save raw data as a JSON file"
             >
               Save as JSON
             </button>
+
             <button
               type="button"
               class="btn btn-sm btn-outline"
-              onclick="showQRCode()"
+              onclick="showQRCodeModal('vevent')"
+              title="Generate QR code to add recurring event to calendar"
             >
-              Show QR Code
+              QR: Calendar Event
             </button>
             <button
               type="button"
               class="btn btn-sm btn-outline"
-              onclick="prepareStakeSVG()"
+              onclick="showQRCodeModal('vcard')"
+              title="Generate QR code with info as a Contact Card (for basic phone scanners)"
             >
-              Prepare 3D Stake SVG
+              QR: Contact Card
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline"
+              onclick="showQRCodeModal('raw')"
+              title="Generate QR code containing raw JSON data (for specific apps)"
+            >
+              QR: Raw Data (JSON)
             </button>
           </div>
           <div class="profile-card-content">
@@ -135,7 +148,6 @@
                 <span id="resultConfidence">N/A</span>%
               </p>
             </div>
-
             <div class="profile-section">
               <h3><i class="icon icon-pot"></i>Pot Information</h3>
               <p>
@@ -177,17 +189,10 @@
           <button class="modal-close" onclick="closeModal('qrCodeModal')">
             &times;
           </button>
-          <h3>Plant Care QR Code</h3>
-          <div id="qrCodeContainer"></div>
-          <p
-            id="qrCodeDataDisplay"
-            style="font-size: 0.8em; word-break: break-all; margin-top: 10px"
-          ></p>
-          <button
-            type="button"
-            class="btn btn-primary"
-            onclick="downloadQRCode()"
-          >
+          <h3 id="qrModalTitle">QR Code</h3>
+          <div id="qrCodeContainer" class="qr-container"></div>
+          <p id="qrCodeDataDisplay" class="qr-data-display"></p>
+          <button type="button" id="qrDownloadButton" class="btn btn-primary">
             Download QR Code (PNG)
           </button>
         </div>
@@ -196,6 +201,8 @@
     <script>
       // --- Global variable to store current results data ---
       let currentResultsData = null;
+      // --- Global variable to store current QR type for download ---
+      let currentQrCodeType = null;
 
       // --- Tab Switching Logic ---
       function switchTab(tabId) {
@@ -417,7 +424,9 @@
         const setText = (id, text) => {
           const element = document.getElementById(id);
           if (element) {
-            element.textContent = text ?? "N/A"; // Use N/A if text is null/undefined
+            // Check for null or undefined, display 'N/A'
+            element.textContent =
+              text === null || typeof text === "undefined" ? "N/A" : text;
           } else {
             console.warn(`Element with ID "${id}" not found.`);
           }
@@ -551,56 +560,209 @@
         downloadFile(filename, jsonContent, "application/json;charset=utf-8");
       }
 
-      // --- QR Code Functions ---
-      let qrCodeInstance = null; // To hold the qrcode.js instance
-
-      function getQRCodeDataString() {
-        if (!currentResultsData || !currentResultsData.watering_schedule)
-          return null;
-        const name = currentResultsData.plant_info?.common_name || "Plant";
-        const amount =
-          currentResultsData.watering_schedule.water_amount_ml || "N/A";
-        const freq =
-          currentResultsData.watering_schedule.frequency_days || "N/A";
-        // Keep data concise for QR code reliability
-        // Consider adding moisture level if space permits: \nNeed: ${schedule.moisture_level_required || 'N/A'}
-        return `Plant: ${name}\nWater: ${amount}ml\nEvery: ${freq} days`;
+      // --- QR Code Data String Generation Functions ---
+      function getQRCodeDataString_vCard() {
+        if (!currentResultsData) return null;
+        const plantInfo = currentResultsData.plant_info || {};
+        const potInfo = currentResultsData.pot_info || {};
+        const schedule = currentResultsData.watering_schedule || {};
+        const name = plantInfo.common_name || "Plant";
+        let noteContent = `Watering Schedule:\n${
+          schedule.schedule_summary ||
+          `Water: ${schedule.water_amount_ml ?? "N/A"}ml, Every: ${
+            schedule.frequency_days ?? "N/A"
+          } days`
+        }\nMoisture Need: ${
+          schedule.moisture_level_required || schedule.moisture_level || "N/A"
+        }\n\nPlant Details:\nFamily: ${plantInfo.family || "N/A"}\nSci Name: ${
+          plantInfo.scientific_name || "N/A"
+        }\nID Conf: ${
+          typeof plantInfo.confidence === "number"
+            ? `${(plantInfo.confidence * 100).toFixed(1)}%`
+            : "N/A"
+        }\n\nPot Details:\nEst. Diameter: ${
+          typeof potInfo.diameter_cm === "number"
+            ? `${potInfo.diameter_cm.toFixed(1)} cm`
+            : "N/A"
+        }\nEst. Volume: ${
+          typeof potInfo.estimated_volume_liters === "number"
+            ? `${potInfo.estimated_volume_liters.toFixed(2)} L`
+            : "N/A"
+        }\nEst. Conf: ${potInfo.confidence || "N/A"}`;
+        const escapedNote = noteContent
+          .replace(/\\/g, "\\\\")
+          .replace(/,/g, "\\,")
+          .replace(/;/g, "\\;")
+          .replace(/\n/g, "\\n");
+        const vCardString = `BEGIN:VCARD\nVERSION:3.0\nFN:${name}\nN:;${name};;;\nNOTE:${escapedNote}\nEND:VCARD`;
+        return vCardString;
       }
 
-      function showQRCode() {
+      function getQRCodeDataString_vEvent() {
+        if (!currentResultsData || !currentResultsData.watering_schedule)
+          return null;
+
+        const schedule = currentResultsData.watering_schedule;
+        const plantInfo = currentResultsData.plant_info || {};
+
+        const name = plantInfo.common_name || "Plant";
+        const amount = schedule.water_amount_ml || "N/A";
+        const freq = schedule.frequency_days;
+
+        // Ensure frequency is a positive integer
+        if (typeof freq !== "number" || freq <= 0 || !Number.isInteger(freq)) {
+          console.warn("Invalid integer frequency for calendar event:", freq);
+          // Optionally, inform the user more directly
+          // showError("Cannot generate calendar event: Watering frequency must be a whole number greater than 0.");
+          return null;
+        }
+
+        // --- Date/Time Formatting (Strict adherence to RFC 5545) ---
+        const now = new Date();
+        // DTSTAMP format: YYYYMMDDTHHMMSSZ (UTC time)
+        const dtstamp =
+          now.toISOString().replace(/[-:.]/g, "").substring(0, 15) + "Z";
+
+        // DTSTART format: YYYYMMDD (for VALUE=DATE - all-day event)
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() + 1); // Start event tomorrow
+        const dtstartYear = startDate.getFullYear();
+        const dtstartMonth = (startDate.getMonth() + 1)
+          .toString()
+          .padStart(2, "0"); // Month is 0-indexed
+        const dtstartDay = startDate.getDate().toString().padStart(2, "0");
+        const dtstart = `${dtstartYear}${dtstartMonth}${dtstartDay}`;
+        // --- End Date/Time Formatting ---
+
+        const uid = `plantwater-${Date.now()}@happyplant.app`; // Unique ID
+        const summary = `Water ${name}`; // Event title
+
+        // Description: Use standard \n for newlines within the field value.
+        // VCALENDAR standard requires escaping backslashes, commas, semicolons.
+        // Newlines (\n) are encoded as literal "\\n" in the final string representation for QR code.
+        let description = `Watering Reminder for ${name}.\\nAmount: Approx. ${amount}ml.\\nFrequency: Every ${freq} days.\\n\\n(Generated by HappyPlant - always check soil moisture before watering!)`;
+        // Escape characters for VCALENDAR field value: \, ; , \n -> \\n
+        description = description
+          .replace(/\\/g, "\\\\")
+          .replace(/,/g, "\\,")
+          .replace(/;/g, "\\;");
+        // Note: We manually inserted '\\n' above, so no need to replace \n again here.
+
+        // RRULE: Frequency=DAILY with interval means "every N days"
+        const rrule = `FREQ=DAILY;INTERVAL=${freq}`;
+
+        // Construct VEVENT string using explicit CRLF (\r\n) line endings
+        const vEventComponents = [
+          "BEGIN:VCALENDAR",
+          "VERSION:2.0",
+          "PRODID:-//HappyPlantApp//WateringReminder//EN",
+          "BEGIN:VEVENT",
+          `UID:${uid}`,
+          `DTSTAMP:${dtstamp}`,
+          `DTSTART;VALUE=DATE:${dtstart}`,
+          `SUMMARY:${summary}`,
+          `DESCRIPTION:${description}`, // Add description field
+          `RRULE:${rrule}`,
+          "END:VEVENT",
+          "END:VCALENDAR",
+        ];
+        const vEventString = vEventComponents.join("\r\n"); // Join with CRLF
+
+        console.log(
+          "Generated QR Code vEvent String (Check for errors):\n",
+          vEventString
+        ); // Log the final string
+        return vEventString;
+      }
+
+      function getQRCodeDataString_Raw() {
+        if (!currentResultsData) return null;
+        return JSON.stringify(currentResultsData); // Stringify the whole object
+      }
+
+      // --- QR Code Modal Display Function ---
+      // qrType: 'raw', 'vcard', 'vevent'
+      function showQRCodeModal(qrType) {
         if (!currentResultsData) {
-          alert("No data available for QR code.");
-          return;
-        }
-        const qrContainer = document.getElementById("qrCodeContainer");
-        const qrDataDisplay = document.getElementById("qrCodeDataDisplay");
-        const modal = document.getElementById("qrCodeModal");
-        if (!qrContainer || !modal || !qrDataDisplay) {
-          console.error("QR Code container or modal not found");
+          alert("No data available to generate QR code.");
           return;
         }
 
-        qrContainer.innerHTML = ""; // Clear previous QR code
-        const dataString = getQRCodeDataString();
-        if (!dataString) {
-          alert("Could not generate QR code data.");
-          return;
-        }
+        let dataString = null;
+        let modalTitle = "QR Code";
+        let dataDescription = ""; // Text shown below QR code in modal
 
-        qrDataDisplay.textContent = `Data: ${dataString.replace("\n", " | ")}`; // Show what's encoded compactly
-
-        try {
-          // Ensure QRCode is available (check if library loaded)
-          if (typeof QRCode === "undefined") {
-            throw new Error("QRCode library is not loaded.");
+        if (qrType === "raw") {
+          dataString = getQRCodeDataString_Raw();
+          modalTitle = "QR Code: Raw Data (JSON)";
+          dataDescription =
+            "Contains full data in JSON format. Best for developers or specific apps, may not scan well with standard phone cameras."; // Updated description
+        } else if (qrType === "vcard") {
+          dataString = getQRCodeDataString_vCard();
+          modalTitle = "QR Code: Contact Card (vCard)";
+          dataDescription =
+            "Scan to view info (may prompt to add contact). Good for basic phone scanners.";
+        } else if (qrType === "vevent") {
+          dataString = getQRCodeDataString_vEvent();
+          if (!dataString) {
+            // Check if event data generation failed (e.g., bad frequency)
+            showError(
+              `Could not generate Calendar Event QR code (requires a valid watering frequency).`
+            );
+            return;
           }
-          qrCodeInstance = new QRCode(qrContainer, {
+          modalTitle = "QR Code: Calendar Event";
+          dataDescription = `Scan with calendar app to add watering reminder (repeats every ${
+            currentResultsData.watering_schedule?.frequency_days || "N/A"
+          } days).`;
+        } else {
+          showError("Invalid QR code type requested.");
+          return;
+        }
+
+        // Check if dataString was successfully generated
+        if (!dataString) {
+          showError(`Could not generate QR code data for type: ${qrType}`);
+          return;
+        }
+
+        const modal = document.getElementById("qrCodeModal");
+        const qrContainer = document.getElementById("qrCodeContainer");
+        const titleElement = document.getElementById("qrModalTitle");
+        const dataDisplay = document.getElementById("qrCodeDataDisplay");
+        const downloadButton = document.getElementById("qrDownloadButton");
+
+        if (
+          !modal ||
+          !qrContainer ||
+          !titleElement ||
+          !dataDisplay ||
+          !downloadButton
+        ) {
+          console.error("QR Code modal elements missing!");
+          return;
+        }
+
+        // Prepare modal
+        titleElement.textContent = modalTitle;
+        dataDisplay.textContent = dataDescription; // Set the description text
+        qrContainer.innerHTML = ""; // Clear previous QR
+        currentQrCodeType = qrType; // Store type for download button
+        downloadButton.onclick = downloadQRCode; // Set download action
+
+        // Generate QR code
+        try {
+          if (typeof QRCode === "undefined")
+            throw new Error("QRCode library is not loaded.");
+          new QRCode(qrContainer, {
             text: dataString,
-            width: 200, // Adjust size as needed
-            height: 200,
+            width: 256, // Consistent size for modal
+            height: 256,
             colorDark: "#000000",
             colorLight: "#ffffff",
-            correctLevel: QRCode.CorrectLevel.H, // High correction level
+            // Adjust correction level based on expected data density
+            correctLevel:
+              qrType === "raw" ? QRCode.CorrectLevel.L : QRCode.CorrectLevel.H, // Lower for potentially long JSON
           });
         } catch (e) {
           console.error("Error generating QR code:", e);
@@ -611,25 +773,42 @@
         modal.style.display = "flex"; // Show the modal
       }
 
+      // --- Download QR Function ---
       function downloadQRCode() {
-        const qrContainer = document.getElementById("qrCodeContainer");
-        if (!qrContainer) return;
-        // qrcode.js usually generates a canvas, but check for img fallback
-        const canvasElement = qrContainer.querySelector("canvas");
-        const imgElement = qrContainer.querySelector("img");
+        // Type is now stored in currentQrCodeType when modal is opened
+        if (!currentQrCodeType) {
+          alert("Cannot determine QR code type to download.");
+          return;
+        }
 
+        const container = document.getElementById("qrCodeContainer");
+        if (!container) {
+          console.error("QR container not found.");
+          return;
+        }
+
+        const canvas = container.querySelector("canvas");
+        const img = container.querySelector("img");
         let dataURL = null;
-        if (canvasElement) {
-          dataURL = canvasElement.toDataURL("image/png");
-        } else if (imgElement && imgElement.src) {
-          dataURL = imgElement.src; // Assumes src is a data URL or accessible
+
+        if (canvas) {
+          try {
+            dataURL = canvas.toDataURL("image/png");
+          } catch (e) {
+            console.error("Error converting canvas to Data URL:", e);
+            alert("Error downloading QR code image.");
+            return;
+          }
+        } else if (img && img.src) {
+          dataURL = img.src;
         }
 
         if (dataURL) {
-          const filename = `${
+          const baseFilename =
             currentResultsData?.plant_info?.common_name?.replace(/ /g, "_") ||
-            "plant"
-          }_qr.png`;
+            "plant";
+          // Use the type stored when the modal was opened
+          const filename = `${baseFilename}_qr_${currentQrCodeType}.png`;
           const a = document.createElement("a");
           a.href = dataURL;
           a.download = filename;
@@ -637,11 +816,12 @@
           a.click();
           document.body.removeChild(a);
         } else {
-          console.error("Could not find QR code image or canvas to download.");
-          alert("Could not find QR code image data.");
+          console.error(`Could not find QR code image/canvas to download.`);
+          alert(`Could not find QR code data to download.`);
         }
       }
 
+      // --- Modal Close Function ---
       function closeModal(modalId) {
         const modal = document.getElementById(modalId);
         if (modal) modal.style.display = "none";
@@ -649,10 +829,10 @@
         const qrContainer = document.getElementById("qrCodeContainer");
         if (modalId === "qrCodeModal" && qrContainer) {
           qrContainer.innerHTML = "";
-          qrCodeInstance = null; // Reset instance if needed
+          currentQrCodeType = null; // Clear stored type
         }
       }
-      // Close modal if clicking outside the content
+      // Close modal on overlay click
       window.addEventListener("click", function (event) {
         const modal = document.getElementById("qrCodeModal");
         if (modal && event.target == modal) {
@@ -661,117 +841,7 @@
         }
       });
 
-      // --- 3D Stake SVG Preparation ---
-      function prepareStakeSVG() {
-        if (!currentResultsData) {
-          alert("No data to generate stake SVG.");
-          return;
-        }
-
-        const qrData = getQRCodeDataString();
-        if (!qrData || qrData === "No data") {
-          alert("No watering data available to generate stake SVG.");
-          return;
-        }
-
-        // Create a temporary div to generate QR code canvas
-        const tempQrDiv = document.createElement("div");
-        tempQrDiv.style.position = "absolute"; // Keep it off-screen
-        tempQrDiv.style.left = "-9999px";
-        document.body.appendChild(tempQrDiv); // Add to DOM temporarily
-
-        let qrImageDataURL = null;
-        try {
-          if (typeof QRCode === "undefined")
-            throw new Error("QRCode library not loaded.");
-          // Generate QR code to the temporary div
-          new QRCode(tempQrDiv, {
-            text: qrData,
-            width: 180, // Pixels for QR code generation
-            height: 180,
-            correctLevel: QRCode.CorrectLevel.H,
-          });
-          const canvas = tempQrDiv.querySelector("canvas");
-          if (!canvas)
-            throw new Error("Canvas not generated by QRCode library.");
-          // Get QR as PNG data URL to embed in SVG
-          qrImageDataURL = canvas.toDataURL("image/png");
-        } catch (e) {
-          console.error("Error preparing SVG stake (QR gen failed):", e);
-          alert("Failed to prepare SVG for 3D printing stake: " + e.message);
-          document.body.removeChild(tempQrDiv); // Clean up temp div
-          return; // Stop if QR generation failed
-        } finally {
-          // Clean up the temporary div regardless of success/failure after getting dataURL
-          if (document.body.contains(tempQrDiv)) {
-            document.body.removeChild(tempQrDiv);
-          }
-        }
-
-        // Proceed only if we got the image data
-        if (!qrImageDataURL) {
-          alert("Failed to get QR code image data for SVG.");
-          return;
-        }
-
-        // --- Define SVG dimensions and elements (in mm for 3D printing) ---
-        const squareSize = 50.8; // 2 inches in mm
-        const qrSize = 46; // Size of QR code within the square in mm (leaves ~2.4mm quiet zone)
-        const qrOffset = (squareSize - qrSize) / 2; // Center QR code
-        const stakeBaseWidth = 20;
-        const stakeHeight = 35; // Stake length
-        const stakeTipY = squareSize + stakeHeight;
-        const stakeBaseY = squareSize;
-        const stakeBaseLeftX = (squareSize - stakeBaseWidth) / 2;
-        const stakeBaseRightX = stakeBaseLeftX + stakeBaseWidth;
-        const stakeTipX = squareSize / 2;
-
-        // Create SVG content string
-        // Using image-rendering: pixelated helps keep QR sharp if scaled
-        const svgContent = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg
-    width="${squareSize}mm"
-    height="${stakeTipY}mm"
-    viewBox="0 0 ${squareSize} ${stakeTipY}"
-    version="1.1"
-    xmlns="http://www.w3.org/2000/svg"
-    xmlns:svg="http://www.w3.org/2000/svg">
-  <defs>
-    <clipPath id="clipSquare">
-        <rect x="0" y="0" width="${squareSize}" height="${squareSize}" />
-    </clipPath>
-  </defs>
-  <g id="layer1">
-    <rect
-       style="fill:#ffffff;stroke:#000000;stroke-width:0.5;stroke-linejoin:round"
-       id="qr_base_square"
-       width="${squareSize}"
-       height="${squareSize}"
-       x="0"
-       y="0" />
-    <image
-       href="${qrImageDataURL}"
-       x="${qrOffset}"
-       y="${qrOffset}"
-       width="${qrSize}"
-       height="${qrSize}"
-       id="qr_code_image"
-       style="image-rendering:pixelated;"
-       clip-path="url(#clipSquare)" />
-    <path
-       style="fill:#ffffff;stroke:#000000;stroke-width:0.5;stroke-linejoin:round"
-       d="M ${stakeBaseLeftX},${stakeBaseY} L ${stakeBaseRightX},${stakeBaseY} L ${stakeTipX},${stakeTipY} z"
-       id="stake_polygon" />
-  </g>
-</svg>`;
-
-        // Trigger SVG download
-        const filename = `${
-          currentResultsData.plant_info?.common_name?.replace(/ /g, "_") ||
-          "plant"
-        }_stake.svg`;
-        downloadFile(filename, svgContent, "image/svg+xml;charset=utf-8");
-      }
+      // --- SVG Stake Function REMOVED ---
 
       // --- Initialize ---
       // Ensure the photo tab is active and results/feedback are hidden on page load
