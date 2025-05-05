@@ -15,11 +15,6 @@ HappyPlant is a smart web application designed to help you determine the optimal
 - 💾 **Data Export**: Export the generated plant profile (plant info, pot info, schedule) as TXT or JSON files.
 - 📲 **Calendar QR Code**: Generate a QR code containing a recurring calendar event (vEvent) for your watering schedule, scannable by most calendar apps.
 
-## Demo / Screenshot
-
-_(Placeholder: Add a screenshot of the application interface here if desired)_
-`![Screenshot](link_to_your_screenshot.png)`
-
 ## Quick Start
 
 The easiest way to run the application is using the provided `run.py` script. This script automates the setup process.
